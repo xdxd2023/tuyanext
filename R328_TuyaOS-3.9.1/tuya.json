@@ -1,0 +1,39 @@
+{
+    "SDKType": "2",
+    "bv": "40.00",
+    "chipInfoList": [
+        "SoC/AllwinnerTechnology/Linux/R328"
+    ],
+    "feature": "https://images.tuyacn.com/smart/sdk/e0b7fb6483901b115b02d5b4d1c0a4de8a930dd0.json",
+    "offShelfReasonCN": "",
+    "offShelfReasonEN": "",
+    "sdkDescCN": "基于TuyaOS3.9.1-beta.48构建扫地机SDK。",
+    "sdkDescEN": "Building the vacuum cleaner SDK based on TuyaOS3.9.1-beta.48.",
+    "sdkId": 343001,
+    "sdkName": "tuyaos_robot_rvc_sdk-arm-openwrt-linux-gnueabi-6.4.1-R328_yl_wifi_ble",
+    "sdkVerDescCN": "版本：2.0.0\n工具链：arm-openwrt-linux-gnueabi-6.4.1\n通信方式：wifi + ble\n更新内容：\n历史发布版本修改履历详见：https://developer.tuya.com/cn/docs/iot-device-dev/robot_version_release?id=Kdsoylvhv0oqg",
+    "sdkVerDescEN": "RVC SDK Version：2.0.0\nToolchain：arm-openwrt-linux-gnueabi-6.4.1\nCommunication Method: wifi + ble\nChanglog: For the modification history of previous release versions, please refer to:\nhttps://developer.tuya.com/cn/docs/iot-device-dev/robot_version_release?id=Kdsoylvhv0oqg",
+    "sdkVersion": "2.0.0",
+    "sdkVersionFileSize": "24386373",
+    "sdkVersionMd5": "a1fa2fbf964456a810ccad8f2935b1c8",
+    "sdkVersionOffShelf": false,
+    "tuyaosVersion": "TuyaOS-3.9.1",
+    "typeCode": "EmbeddedPackage-Robot:Laser",
+    "typeNameCN": "机器人开发:激光扫地机设备开发包",
+    "typeNameEN": "Robot Development:Laser Device Development Kit",
+    "quickStartDemoName": "",
+    "quickStartDemoAddr": "",
+    "typeDemoName": [],
+    "typeDemoAddr": [],
+    "package": {
+        "MainPackage": {
+            "Name": "tuyaos_robot_rvc_sdk_2.0.0_arm-openwrt-linux-gnueabi-6.4.1_R328_yl_wifi_ble_0.0.9.tar.gz"
+        },
+        "Packages": [],
+        "CurrentPackage": {
+            "Name": "tuyaos_robot_rvc_sdk_2.0.0_arm-openwrt-linux-gnueabi-6.4.1_R328_yl_wifi_ble_0.0.9.tar.gz"
+        }
+    },
+    "sdkVersionId": "545001",
+    "id": 343001
+}

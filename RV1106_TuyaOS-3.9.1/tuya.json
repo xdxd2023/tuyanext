@@ -1,0 +1,39 @@
+{
+    "SDKType": "2",
+    "bv": "40.00",
+    "chipInfoList": [
+        "SoC/Rockchip/Linux/RV1106"
+    ],
+    "feature": "https://images.tuyacn.com/smart/sdk/da8dbcaaba1942a377efcee591a4118b5c172a20.json",
+    "offShelfReasonCN": "",
+    "offShelfReasonEN": "",
+    "sdkDescCN": "基于TuyaOS3.9.1-beta.48构建扫地机SDK。",
+    "sdkDescEN": "Building the vacuum cleaner SDK based on TuyaOS3.9.1-beta.48.",
+    "sdkId": 344001,
+    "sdkName": "tuyaos_robot_rvc_sdk-arm-rv1106-linux-gnueabihf-gcc-10.4.0-RV1106_wt_wifi_ble",
+    "sdkVerDescCN": "版本：2.0.0\n工具链：arm-rv1106-linux-gnueabihf_sdk-buildroot-10.4.0\n通信方式：wifi + ble\n更新内容：\n历史发布版本修改履历详见：https://developer.tuya.com/cn/docs/iot-device-dev/robot_version_release?id=Kdsoylvhv0oqg",
+    "sdkVerDescEN": "RVC SDK Version：2.0.0\nToolchain：arm-rv1106-linux-gnueabihf_sdk-buildroot-10.4.0\nCommunication Method: wifi + ble\nChanglog: For the modification history of previous release versions, please refer to:\nhttps://developer.tuya.com/cn/docs/iot-device-dev/robot_version_release?id=Kdsoylvhv0oqg",
+    "sdkVersion": "2.0.0",
+    "sdkVersionFileSize": "24978286",
+    "sdkVersionMd5": "494df17d104e21a206f925fa0b5f1829",
+    "sdkVersionOffShelf": false,
+    "tuyaosVersion": "TuyaOS-3.9.1",
+    "typeCode": "EmbeddedPackage-Robot:IPC",
+    "typeNameCN": "机器人开发:复合音视频激光扫地机设备开发包",
+    "typeNameEN": "Robot Development:Video Streaming",
+    "quickStartDemoName": "",
+    "quickStartDemoAddr": "",
+    "typeDemoName": [],
+    "typeDemoAddr": [],
+    "package": {
+        "MainPackage": {
+            "Name": "tuyaos_robot_rvc_sdk_2.0.0_arm-rv1106-linux-gnueabihf-gcc-10.4.0_RV1106_wt_wifi_ble_0.0.2.tar.gz"
+        },
+        "Packages": [],
+        "CurrentPackage": {
+            "Name": "tuyaos_robot_rvc_sdk_2.0.0_arm-rv1106-linux-gnueabihf-gcc-10.4.0_RV1106_wt_wifi_ble_0.0.2.tar.gz"
+        }
+    },
+    "sdkVersionId": "545014",
+    "id": 344001
+}

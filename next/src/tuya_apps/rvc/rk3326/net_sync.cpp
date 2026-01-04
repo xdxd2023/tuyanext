@@ -1,0 +1,217 @@
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <time.h>
+#include <sys/time.h>
+
+#include "utils/log_.h"
+#include "voice.h"
+#include "tuya_robot.h"
+
+#include "uni_log.h"
+#include "uni_time.h"
+#include "sys_timer.h"
+#include "tuya_cloud_wifi_defs.h"
+#include "tuya_cloud_com_defs.h"
+
+VOID ty_cmd_handle_dp_cmd_objs(IN CONST TY_RECV_OBJ_DP_S* dp_rev);
+void ty_cmd_handle_sync_to_cloud(void);
+
+static BOOL_T s_mqtt_online_status = FALSE; //mqtt 上线标识
+
+
+/**
+ * @brief  设备的 wifi 状态回调
+ * @param  [BYTE_T*] stat
+ * @return [*]
+ */
+VOID ty_sdk_net_status_change_cb(IN CONST BYTE_T stat)
+{
+    static GW_WIFI_NW_STAT_E last_stat = 0xFF;
+    static char pair_flag = 0;
+
+    PR_DEBUG("net change cb now status -[%d], last status -[%d]", stat, last_stat);
+
+    if (last_stat == stat) { //相同的状态做过滤
+        return;
+    }
+
+    last_stat = stat;
+    switch (stat) {
+    case STAT_UNPROVISION:
+    case STAT_AP_STA_UNCFG:
+        //这里是设备重置的状态，可以做灯效显示，比如未配网状态，显示黄灯
+        pair_flag = TRUE;
+        PR_DEBUG("goto wait pair wifi");
+        break;
+    case STAT_CLOUD_CONN: // wifi 连上云端
+    case STAT_AP_CLOUD_CONN: //开发者可以在 wifi 连云之后，做 dp、语音、灯效等同步
+        PR_DEBUG("mqtt is online\r\n");
+        //其它比较耗时的业务逻辑不要在这边处理，可以通过事件的形式发送出去，到别的任务上出来。
+        s_mqtt_online_status = true; //mqtt 上线
+        if (pair_flag) {
+            PR_DEBUG("first pair sucess!");
+            pair_flag = FALSE;
+            PlayVoice(V_SERVER_CONNECTED, PLAY_QUEUE);
+            //首次配网成功之后的业务处理可以在这里做，比如这边可以显示绿灯，语音播报如配网成功。
+        } else {
+            //设备正常上线状态，业务上可以在这里处理
+            PlayVoice(V_SERVER_CONNECTED, PLAY_QUEUE);
+        }
+        ty_cmd_handle_sync_to_cloud(); // 上传支持的 dp 点信息（进行 dp 同步）
+        break;
+
+    case STAT_AP_STA_DISC:
+    case STAT_STA_DISC:
+        s_mqtt_online_status = false; //mqtt 掉线
+        //尝试连接 wifi，开发者一般不需要关心该过程。如有特殊业务，需要获取 wifi 的连接过程状态来做相对应的业务功能，可以在这里做。
+        //其它比较耗时的业务逻辑不要在这边处理，可以通过事件的形式发送出去，到别的任务上出来。
+        break;
+    case STAT_STA_CONN: //连上路由器
+        PR_NOTICE("device disconnect clouds");
+        s_mqtt_online_status = false; //mqtt 掉线
+        //这是设备离线状态，可以在这里做一些灯效显示，如显示黄灯
+        //其它比较耗时的业务逻辑不要在这边处理，可以通过事件的形式发送出去，到别的任务上出来。
+        break;
+    case STAT_REG_FAIL: //激活失败的
+        //可以在这里播放激活失败的语音
+        //其它比较耗时的业务逻辑不要在这边处理，可以通过事件的形式发送出去，到别的任务上出来。
+        break;
+    default: {
+        break;
+    }
+    }
+    return;
+    /**********该回调是 1S 一次，回调里面不要做复杂的事件，建议通过事件的形式发送到独立线程上处理***************/
+}
+
+bool tuya_is_online(void)
+{
+    return s_mqtt_online_status;
+}
+
+/**
+ * @brief 获取 SDK 的系统时间（该时间在 mqtt 上线时会与云端时间同步）
+ * @param[out] time_utc: 时间
+ * @param[out] time_zone: 时区
+ * @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+ */
+OPERATE_RET tuya_robot_get_service_time(OUT TIME_T* time_utc, OUT INT_T* time_zone)
+{
+    if (NULL == time_utc || NULL == time_zone) {
+        PR_ERR("invalid param");
+        return OPRT_INVALID_PARM;
+    }
+    *time_utc = uni_time_get_posix(); //获取系统时间戳
+    uni_get_time_zone_seconds(time_zone); //获取时区
+    PR_DEBUG("robot get service time %d %d", *time_utc, *time_zone);
+
+    if ((OPRT_OK == uni_time_check_time_sync()) && (OPRT_OK == uni_time_check_time_zone_sync())) { //时间戳及时区校验
+        return OPRT_OK;
+    } else {
+        return OPRT_COM_ERROR;
+    }
+}
+
+bool SyncTime()
+{
+    //同步服务器时间
+    TIME_T time_utc;
+    struct tm time_local;
+    INT_T time_zone;
+    int ret = tuya_robot_get_service_time(&time_utc, &time_zone);
+    if(ret != OPRT_OK) {
+        LOGE("OPS", "get time error");
+        return false;
+    }
+    POSIX_TM_S CurrentTm = { 0 };
+    ret =  uni_local_time_get(&CurrentTm);    //该获取本地时间（带时区和夏令时）。如果要获取 utc 时间（不带时区和夏令时），可以替换成 uni_time_get 接口
+    if(ret != OPRT_OK){
+        PR_ERR("uni_local_time_get->CurrentTm ret:%d\n", ret);
+        return ret;
+    }
+
+    time_t t;
+    t = mktime((struct tm*)&CurrentTm);
+    if(t == -1)
+    {
+        LOGE("OPS", "mktime error");
+        t = time_utc + time_zone;
+    }
+    char cmd[256] = {0};
+    // 设置系统时间
+    LOGD("OPS", "time_utc:{}, t: {}, time_zone:{}", time_utc, t, time_zone);
+    LOGD("OPS", "time local:{} {}-{}-{} {:02d}:{:02d}:{:02d} is_in_sun:{}", t,  
+        CurrentTm.tm_year + 1900, CurrentTm.tm_mon + 1, CurrentTm.tm_mday, CurrentTm.tm_hour, CurrentTm.tm_min, CurrentTm.tm_sec, uni_is_in_sum_zone(t));
+  
+    struct timeval tv;
+    tv.tv_sec = t;
+    tv.tv_usec = 0;
+    settimeofday(&tv, NULL);
+    return true;
+}
+
+/**
+ * @brief  定时获取系统时间对时处理
+ * @param  [TIMER_ID] timerID
+ * @param  [PVOID_T] pTimerArg
+ * @return [*]
+ */
+static void __robot_get_service_timer_cb(TIMER_ID timerID, PVOID_T pTimerArg)
+{
+    SyncTime();
+}
+
+/**
+ * @brief  sdk 中的 mqtt 在线后 loop 处理
+ * @param  [*]
+ * @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+ */
+OPERATE_RET tuya_sdk_mqtt_online_sys_loop(void)
+{
+    while (s_mqtt_online_status == FALSE) { //等待 MQTT 在线
+        usleep(100 * 1000); // 100ms
+    }
+    PR_DEBUG("tuya_sdk_mqtt_online_proc is start run\n");
+    int ret;
+    //同步服务器时间
+    TIME_T time_utc;
+    INT_T time_zone;
+    while (1) {
+        //设备上电会同步一次时间，对于平台系统时间不是很准的情况下，开发者可以根据自身的需求，每隔一段时间调用该接口，同步一次云端系统时间。
+        if(SyncTime())
+        {
+            break;
+        }
+        sleep(1);
+    }
+    PR_DEBUG("get service time [%u-%d]", time_utc, time_zone);
+    //开发者在此处将获取的到服务器时间同步到设备本地时间
+    //注意：如果开发者需要支持夏/冬令时，请使用以下接口获取时间
+    /*
+    POSIX_TM_S CurrentTm = { 0 };
+    ret =  uni_local_time_get(&CurrentTm);    //该获取本地时间（带时区和夏令时）。如果要获取 utc 时间（不带时区和夏令时），可以替换成 uni_time_get 接口
+    if(ret != OPRT_OK){
+        PR_ERR("uni_local_time_get->CurrentTm ret:%d\n", ret);
+        return ret;
+    }
+    CurrentTm.tm_year = CurrentTm.tm_year + 1900;
+    CurrentTm.tm_mon = CurrentTm.tm_mon + 1;
+    PR_DEBUG("CurrentTm:%d-%d-%d %d:%d:%d",CurrentTm.tm_year,CurrentTm.tm_mon+1,CurrentTm.tm_mday,\
+                                            CurrentTm.tm_hour,CurrentTm.tm_min,CurrentTm.tm_sec);
+    */
+    PR_DEBUG("tuya_sdk_mqtt_online_proc is end run\n");
+
+    // 定时器 ID 初始化
+    STATIC TIMER_ID get_service_timer_id = 0;
+
+    // 添加获取时间的定时器
+    sys_add_timer(__robot_get_service_timer_cb, NULL, &get_service_timer_id);
+
+    // 开启定时器，6 小时机器对时一次
+    sys_start_timer(get_service_timer_id, (3600 * 6000), TIMER_CYCLE);
+
+    return 0;
+}
+
