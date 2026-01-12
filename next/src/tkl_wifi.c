@@ -48,7 +48,7 @@ TUYA_WEAK_ATTRIBUTE OPERATE_RET tkl_wifi_deinit(VOID_T)
 TUYA_WEAK_ATTRIBUTE OPERATE_RET tkl_wifi_scan_ap(CONST SCHAR_T *ssid, AP_IF_S **ap_ary, UINT_T *num)
 {
     TKL_LOGD("#####:  func=%s, line=%d\n", __func__, __LINE__);
-    TKL_LOGD("#####: tkl_wifi_scan_ap ssid %s\n", ssid ? ssid : "NULL");
+    TKL_LOGD("#####: tkl_wifi_scan_ap ssid %s\n", ssid != NULL ? ssid : "NULL");
     if (ap_ary == NULL || num == NULL) {
         TKL_LOGE("Invalid parameters");
         return OPRT_INVALID_PARM;
@@ -325,7 +325,11 @@ static OPERATE_RET wifi_get_ipv4(CONST WF_IF_E wf, NW_IP_S *ip)
             
             // Copy the IP address to the output parameter
             if (ip != NULL) {
+            #ifdef RK3326_TUYAOS
+                snprintf(ip->ip, sizeof(ip->ip), "%s", ptr);
+            #else
                 snprintf(ip->nwipstr, sizeof(ip->nwipstr), "%s", ptr);
+            #endif
                 //ip->type = TY_AF_INET;
             }
             break;
@@ -342,6 +346,7 @@ static OPERATE_RET wifi_get_ipv6(CONST WF_IF_E wf, int type, NW_IP_S *ip)
     return OPRT_OK;
 }
 
+#ifndef RK3326_TUYAOS
 /**
  * @brief get wifi ipv6 info.when wifi works in
  *        ap+station mode, wifi has two ips.
@@ -354,6 +359,7 @@ OPERATE_RET tkl_wifi_get_ipv6(CONST WF_IF_E wf, NW_IP_TYPE type, NW_IP_S *ip)
 {
     return OPRT_NOT_SUPPORTED;	
 }
+#endif
 
 TUYA_WEAK_ATTRIBUTE OPERATE_RET tkl_wifi_get_ip(CONST WF_IF_E wf, NW_IP_S *ip)
 {
@@ -529,8 +535,11 @@ TUYA_WEAK_ATTRIBUTE OPERATE_RET tkl_wifi_start_ap(CONST WF_AP_CFG_IF_S *cfg)
         TKL_LOGE("invalid parm");
         return OPRT_INVALID_PARM;
     }
-
+#ifdef RK3326_TUYAOS
+    TKL_LOGD("Start AP SSID:%s ,CHANNEL:%d, ip:%s", cfg->ssid,cfg->chan, cfg->ip.ip);
+#else
     TKL_LOGD("Start AP SSID:%s ,CHANNEL:%d, ip:%s", cfg->ssid,cfg->chan, cfg->ip.nwipstr);
+#endif
 #if 0
     iret = tkl_gen_ap_start(cfg);
 #else

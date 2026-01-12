@@ -405,8 +405,11 @@ void TuyaComm::ReportDeviceInfo(void)
 
         NW_IP_S ips = {0};
         tkl_wifi_get_ip(WF_STATION, &ips);
+        #ifdef RK3326_TUYAOS
+        std::string ip = ips.ip;
+        #else
         std::string ip = ips.nwipstr;
-
+        #endif
         NW_MAC_S macs = {0};
         char macStr[32] = {0};
         tkl_wifi_get_mac(WF_STATION, &macs);

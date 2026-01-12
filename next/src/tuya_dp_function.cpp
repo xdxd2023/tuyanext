@@ -1215,7 +1215,7 @@ std::vector<uint8_t> ToVirtualWallData(uint8_t cmd, AppVirtualWall *msg)
     raw.push_back(cmd);
     if (msg->version == 0)
     {
-        // LOGD(TAG, "上报虚拟墙设置 v1.0.0");
+        LOGD(TAG, "上报虚拟墙设置 v1.0.0");
         raw.push_back(msg->count);
         for (int i = 0; i < msg->count; i++)
         {
@@ -1899,9 +1899,13 @@ void TuyaHandleStandardFunction(int dpId, uint8_t *d, int len)
                     wall.wall.push_back(Segment{TuyaXYToMars(x0, y0), TuyaXYToMars(x1, y1)});
                 }
                 tuya_message::Result res;
-                if (TuyaComm::Get()->Send("ty_virtual_wall", &wall, &res))
+                if (TuyaComm::Get()->Send("ty_virtual_wall", &wall, &res, 1000))
                 {
                     TuyaReportVirtualWall(dpId, 0x13, &wall);
+                }
+                else
+                {
+                    LOGE(TAG, "虚拟墙设置失败 v1.0.0");
                 }
             }
             break;
@@ -1919,7 +1923,7 @@ void TuyaHandleStandardFunction(int dpId, uint8_t *d, int len)
             }
             else
             {
-                LOGE(TAG, "无法获取到虚拟墙信息");
+                LOGE(TAG, "无法获取到虚拟墙信息 0x13");
             }
         }
         break;
@@ -2236,6 +2240,10 @@ void TuyaHandleStandardFunction(int dpId, uint8_t *d, int len)
                 room_info.roomId.push_back(*start++);
                 std::string name;
                 int name_len = *start++;
+                if(name_len > 19)
+                {
+                    name_len = 19;
+                }
                 for (int j = 0; j < name_len; j++)
                 {
                     name.push_back(*(start + j));
@@ -2722,19 +2730,19 @@ int TuyaUploadMapFile2(int currId, uint32_t & tuyaMapId, bool update)
     std::vector<uint8_t> tuyaVirtualWall;
     wall.version = 0;
     wall.count = 0;
-    if (TuyaComm::Get()->Send("ty_get_virtual_wall", &req, &wall) && wall.version >= 0)
+    if (TuyaComm::Get()->Send("ty_get_virtual_wall", &req, &wall, 2000) && wall.version >= 0)
     {
         tuyaVirtualWall = ToVirtualWallData(wall.version == 0 ? 0x13 : 0x49, &wall);
     }
     else
     {
-        LOGE(TAG, "无法获取到虚拟墙信息");
+        LOGE(TAG, "无法获取到虚拟墙信息 TuyaUploadMapFile2");
     }
 
     // 获取禁区数据
     AppRestrictedArea area;
     std::vector<uint8_t> tuyaRestrictedArea;
-    if (TuyaComm::Get()->Send("ty_get_restricted_area", &req, &area) && area.version >= 0)
+    if (TuyaComm::Get()->Send("ty_get_restricted_area", &req, &area, 500) && area.version >= 0)
     {
         tuyaRestrictedArea = ToRestrictedAreaData(area.version == 0 ? 0x1B : 0x39, &area);
     }
@@ -2855,7 +2863,7 @@ int TuyaUpdateMapFile(int currId, uint32_t tuyaMapId)
     }
     else
     {
-        LOGE(TAG, "无法获取到虚拟墙信息");
+        LOGE(TAG, "无法获取到虚拟墙信息 TuyaUpdateMapFile");
     }
 
     // 获取禁区数据
@@ -2936,7 +2944,7 @@ int TuyaUploadMapFile(int currId, uint32_t & tuyaMapId)
     }
     else
     {
-        LOGE(TAG, "无法获取到虚拟墙信息");
+        LOGE(TAG, "无法获取到虚拟墙信息 TuyaUploadMapFile");
     }
 
     // 获取禁区数据
