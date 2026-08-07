@@ -1,7 +1,11 @@
 #include <fstream>
+#include <iomanip>
 #include <netinet/in.h>
+#include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <openssl/md5.h>
+#include <string>
 
 #include "utils/log_.h"
 #include "utils/json.hpp"
@@ -24,14 +28,14 @@ Point TuyaXYToMars(int x, int y)
 
 int MarsXToTuya(Point p)
 {
-    return std::round(p.x * 10 / _mapResolution);
+    return (((p.x) * 10) / _mapResolution);
 }
 int MarsYToTuya(Point p)
 {
-    return std::round(p.y * 10 / _mapResolution);
+    return (((p.y) * 10) / _mapResolution);
 }
 
-bool TuyaLoadKey(const char *path, std::string &id, std::string &uuid, std::string &authKey)
+bool TuyaLoadKey(const char *path, std::string &id, std::string &uuid, std::string &authKey, std::string & robot_type)
 {
     std::ifstream f(path);
     try
@@ -40,7 +44,8 @@ bool TuyaLoadKey(const char *path, std::string &id, std::string &uuid, std::stri
         id = data["product_id"].get<std::string>();
         uuid = data["device_uuid"].get<std::string>();
         authKey = data["product_authkey"].get<std::string>();
-        LOGD(TAG, "Got the tuya.key id={}, uuid={}", id, uuid);
+        robot_type = data.value("robot_type", robot_type);
+        LOGD(TAG, "Got the tuya.key id={}, uuid={}, robot_type={}", id, uuid, robot_type);
         return true;
     }
     catch (const std::exception &e)
@@ -95,7 +100,7 @@ bool SoftVersion(const char *path, std::string &soft_version, std::string &mcu_v
     }
     if (mcu_version.empty())
     {
-         std::ifstream in_file("./mcu_version.txt");
+        std::ifstream in_file("./mcu_version.txt");
         if (in_file.is_open())
         {
             getline(in_file, mcu_version);
@@ -860,4 +865,34 @@ bool ToTuyaRestrictedArea(AppRestrictedArea &appRestrictedArea, uint8_t cmd, std
         tuyaRestrictedArea.push_back(sum);
     }
     return true;
+}
+
+
+// 计算文件的 MD5 哈希值
+std::string md5sum(const std::string& file_path) 
+{
+    unsigned char c[MD5_DIGEST_LENGTH];
+    MD5_CTX mdContext;
+    MD5_Init(&mdContext);
+
+    std::ifstream file(file_path, std::ifstream::binary);
+    if (!file) {
+        LOGD(TAG, "Failed to open file: {}", file_path);
+        return "";
+    }
+
+    char buffer[1024];
+    while (file.good()) {
+        file.read(buffer, sizeof(buffer));
+        MD5_Update(&mdContext, buffer, file.gcount());
+    }
+
+    MD5_Final(c, &mdContext);
+
+    std::ostringstream md5_string;
+    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i) {
+        md5_string << std::hex << std::setw(2) << std::setfill('0') << (int)c[i];
+    }
+
+    return md5_string.str();
 }

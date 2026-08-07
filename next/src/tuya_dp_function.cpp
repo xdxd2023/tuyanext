@@ -4,8 +4,6 @@
 #include <fstream>
 #include <sstream>
 #include <netinet/in.h>
-#include <openssl/md5.h>
-#include "tuya_robot.h"
 
 #include "utils/log_.h"
 #include "utils/json.hpp"
@@ -15,6 +13,8 @@
 #include "tuyaos_sdk.h"
 #include "tuya_iot_internal_api.h"
 
+#include "tuya_robot.h"
+#include "tuya_sweeper.h"
 #include "tuya_enums.h"
 #include "tuya_utils.h"
 #include "tuya_dp_function.h"
@@ -28,74 +28,6 @@
 
 using json = nlohmann::json;
 
-
-// 计算文件的 MD5 哈希值
-std::string md5sum(const std::string& file_path) {
-    unsigned char c[MD5_DIGEST_LENGTH];
-    MD5_CTX mdContext;
-    MD5_Init(&mdContext);
-
-    std::ifstream file(file_path, std::ifstream::binary);
-    if (!file) {
-        LOGD(TAG, "Failed to open file: {}", file_path);
-        return "";
-    }
-
-    char buffer[1024];
-    while (file.good()) {
-        file.read(buffer, sizeof(buffer));
-        MD5_Update(&mdContext, buffer, file.gcount());
-    }
-
-    MD5_Final(c, &mdContext);
-
-    std::ostringstream md5_string;
-    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i) {
-        md5_string << std::hex << std::setw(2) << std::setfill('0') << (int)c[i];
-    }
-
-    return md5_string.str();
-}
-
-TY_OBJ_DP_S DPReportBool(int dpId, bool b)
-{
-    TY_OBJ_DP_S dp = {0};
-    dp.dpid = dpId;
-    dp.type = PROP_BOOL;
-    dp.value.dp_bool = b;
-    dp.time_stamp = 0;
-    return dp;
-}
-
-TY_OBJ_DP_S DPReportEnum(int dpId, int e)
-{
-    TY_OBJ_DP_S dp = {0};
-    dp.dpid = dpId;
-    dp.type = PROP_ENUM;
-    dp.value.dp_enum = e;
-    dp.time_stamp = 0;
-    return dp;
-}
-
-TY_OBJ_DP_S DPReportValue(int dpId, int v)
-{
-    TY_OBJ_DP_S dp = {0};
-    dp.dpid = dpId;
-    dp.type = PROP_VALUE;
-    dp.value.dp_value = v;
-    dp.time_stamp = 0;
-    return dp;
-}
-
-TY_OBJ_DP_S DPReportBitmap(int dpId, uint32_t b)
-{
-    TY_OBJ_DP_S dp = {0};
-    dp.dpid = dpId;
-    dp.type = PROP_BITMAP;
-    dp.value.dp_bitmap = b;
-    dp.time_stamp = 0;
-    return dp;
-}
 
 // true：清扫启动 false：清扫停止
 TY_OBJ_DP_S DP_ReportSwichGo(int dpId, bool b)
@@ -143,7 +75,7 @@ TY_OBJ_DP_S DP_ReportSwichCharge(int dpId, bool b)
 }
 void DP_HandleSwichCharge(TY_OBJ_DP_S *dp)
 {
-    tuya_message::Request req = {};
+    tuya_message::Request req = {dp->value.dp_bool};
     tuya_message::Result res = {};
     if (dp->value.dp_bool)
     {
@@ -249,6 +181,7 @@ TY_OBJ_DP_S DP_ReportSuction(int dpId, int power)
 void DP_HandleSuction(TY_OBJ_DP_S *dp)
 {
     int suction = dp->value.dp_enum;
+    LOGD(TAG, "吸力控制:{}", suction);
     tuya_message::Request req = {suction};
     tuya_message::Result res = {};
     TuyaComm::Get()->Send("ty_set_fan", &req, &res);
@@ -271,6 +204,7 @@ TY_OBJ_DP_S DP_ReportCistern(int dpId, int cistern)
 void DP_HandleCistern(TY_OBJ_DP_S *dp)
 {
     int cistern = dp->value.dp_enum;
+    LOGD(TAG, "水量控制:{}", cistern);
     tuya_message::Request req = {cistern};
     tuya_message::Result res = {};
     TuyaComm::Get()->Send("ty_set_watertank", &req, &res);
@@ -285,7 +219,7 @@ void DP_HandleSeek(TY_OBJ_DP_S *dp)
     bool b = dp->value.dp_bool;
     PlayVoice(V_SEEK_ROBOT, 2);
 
-    TY_OBJ_DP_S d = DP_ReportSeek(dp->dpid, 0);
+    TY_OBJ_DP_S d = DP_ReportSeek(dp->dpid, b); // 修复 alexa 问题 1
     dev_report_dp_json_async(NULL, &d, 1);
 }
 
@@ -361,6 +295,7 @@ void DPRaw_HandleCommand(int dpId, uint8_t *data, int len)
 
 void DPRaw_Send(int dpId, uint8_t *data, int len, int timeoutMs)
 {
+    LOGD(TAG, "dev_report_dp_raw_sync id:{}, len:{}, timeouts:{}", dpId, len, timeoutMs);
     dev_report_dp_raw_sync(NULL, dpId, (const uint8_t *)data, len, timeoutMs);
 }
 
@@ -372,19 +307,19 @@ void DP_HandleRequest(TY_OBJ_DP_S *dp)
     case 0: // get map
     {
         LOGD(TAG, "DP16 get map");
-        TuyaComm::Get()->ReportMap();
+        RobotSweeper::Get()->ReportMap();
     }
     break;
     case 1: // get path
     {
         LOGD(TAG, "DP16 get path");
-        TuyaComm::Get()->ReportPath();
+        RobotSweeper::Get()->ReportPath();
     }
     break;
     case 2: // get both
     {
         LOGD(TAG, "DP16 get both");
-        TuyaComm::Get()->ReportMapAll();
+        RobotSweeper::Get()->ReportMapAll();
     }
     break;
     default:
@@ -1203,6 +1138,23 @@ void DP_HandleStationHotFanTime(TY_OBJ_DP_S *dp)
     }
 }
 
+void DP_HandleStationSelfClean(TY_OBJ_DP_S *dp)
+{
+    bool b = dp->value.dp_bool;
+    LOGD(TAG, "{}基站自清洁", b ? "开启" : "关闭");
+    tuya_message::Request req = {b};
+    tuya_message::Result res = {};
+    if (TuyaComm::Get()->Send("ty_turnon_station_self_clean", &req, &res))
+    {
+        TY_OBJ_DP_S d = DPReportBool(dp->dpid, b);
+        dev_report_dp_json_async(NULL, &d, 1);
+    }
+    else
+    {
+        LOGE(TAG, "功能无实现");
+    }
+}
+
 // 标准功能
 void DPRaw_Send(int dpId, uint8_t *data, int len, int timeoutMs);
 
@@ -1679,6 +1631,33 @@ void TuyaReportRoomClean(int dpId, uint8_t cmd, AppRoomClean *msg)
     DPRaw_Send(dpId, &raw[0], raw.size(), 100);
 }
 
+void TuyaReportRoomCleanV2(int dpId, uint8_t cmd, AppRoomCleanV2 *msg)
+{
+    std::vector<uint8_t> raw;
+    raw.push_back(0xAA);
+    raw.push_back(0x00);
+    raw.push_back(0x00);
+    raw.push_back(cmd);
+    raw.push_back(msg->count);
+    for(int i=0; i<msg->count; i++)
+    {
+        raw.push_back(msg->id[i]);
+        raw.push_back(msg->fan_level[i]);
+        raw.push_back(msg->water_level[i]);
+        raw.push_back(msg->y_mop[i]);
+        raw.push_back(msg->cleanRepeat[i]);
+    }
+    raw[2] = raw.size() - 3;
+    uint8_t sum = 0;
+    for (int i = 3; i < raw.size(); i++)
+    {
+        sum += raw[i];
+    }
+    raw.push_back(sum);
+    LOGD(TAG, "Send: {}", spdlog::to_hex(raw.begin(), raw.end()));
+    DPRaw_Send(dpId, &raw[0], raw.size(), 100);
+}
+
 void TuyaReportRoomName(int dpId, uint8_t cmd, AppSetRoomName *msg)
 {
     std::vector<uint8_t> raw;
@@ -1972,6 +1951,7 @@ void TuyaHandleStandardFunction(int dpId, uint8_t *d, int len)
                 tuya_message::Result res;
                 if (TuyaComm::Get()->Send("ty_clean_blocks", &room, &res))
                 {
+                    LOGD(TAG, "返回分区清扫信息");
                     TuyaReportRoomClean(dpId, 0x15, &room);
                 }
             }
@@ -1984,11 +1964,46 @@ void TuyaHandleStandardFunction(int dpId, uint8_t *d, int len)
                 AppRoomClean room;
                 if(TuyaComm::Get()->Send("ty_get_clean_blocks", &req, &room) && room.count > 0)
                 {
+                    LOGD(TAG, "返回分区清扫信息");
                     TuyaReportRoomClean(dpId, 0x15, &room);
                 }
                 else
                 {
                     LOGE(TAG, "无法获取到分区清扫信息");
+                }
+            }
+            break;
+        case 0x56:
+            LOGD(TAG, "选区清扫高级版");
+            {
+                AppRoomCleanV2 room;
+                room.version = 1;
+                room.count = data[4];
+                for (int i = 0; i < room.count; i++)
+                {
+                    room.id.push_back((data[5 + i * 5]));
+                    room.fan_level.push_back((data[5 + i * 5 + 1]));
+                    room.water_level.push_back((data[5 + i * 5 + 2]));
+                    room.y_mop.push_back((data[5 + i * 5 + 3]));
+                    room.cleanRepeat.push_back((data[5 + i * 5 + 4]));
+                }
+                tuya_message::Result res;
+                if (TuyaComm::Get()->Send("ty_clean_blocks_v2", &room, &res))
+                {
+                    LOGD(TAG, "返回分区清扫信息");
+                    TuyaReportRoomCleanV2(dpId, 0x57, &room);
+                }
+            }
+            break;
+        case 0x57:
+            LOGD(TAG, "获取选区清扫高级版");
+            {
+                tuya_message::Result res;
+                AppRoomCleanV2 room;
+                if (TuyaComm::Get()->Send("ty_clean_blocks_v2", &room, &res))
+                {
+                    LOGD(TAG, "返回分区清扫信息");
+                    TuyaReportRoomCleanV2(dpId, 0x57, &room);
                 }
             }
             break;
@@ -3251,50 +3266,160 @@ void TuyaHandleExtentedFuction(int dpId, uint8_t *data, int len)
                 LOGD(TAG, "语音包下载成功");
                 // 获取文件扩展名
                 std::string ext = file_name.substr(file_name.find_last_of(".") + 1);
+                std::string cmd;
                 int err = 0;
                 if(ext == "gz")
                 {
                     system(("mkdir -p /data/voice/" + std::to_string(langId)).c_str());
-                    err += system(("tar -zxf " + file_name + " --strip-components=1 -C /data/voice/" + std::to_string(langId)).c_str());
-                    err += system(("rm " + file_name).c_str());
+                    cmd = "tar -zxf " + file_name + " --strip-components=1 -C /data/voice/" + std::to_string(langId);
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "rm " + file_name;
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
                     //err += system(("mv /data/voice/" + std::to_string(langId) + "/*/* " + "/data/voice/" + std::to_string(langId)).c_str());
                     // 写入版本信息
-                    err += system(("echo " + std::to_string(fileVersion) + " > " + "/data/voice/" + std::to_string(langId) + "/ver.txt").c_str());
-                    err += system("rm -rf /data/voice/now");
-                    err += system(("ln -sf /data/voice/" + std::to_string(langId) + " " + "/data/voice/now").c_str());
-                    err += system(("echo " + std::to_string(langId) + " > " + "/data/voice/" + "/now.txt").c_str());
+                    cmd = "echo " + std::to_string(fileVersion) + " > " + "/data/voice/" + std::to_string(langId) + "/ver.txt";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "rm -rf /data/voice/now";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "ln -sf /data/voice/" + std::to_string(langId) + " " + "/data/voice/now";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "echo " + std::to_string(langId) + " > " + "/data/voice/" + "/now.txt";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
                     //TuyaReportVoiceDownLoadResult(dpId, version, langId, fileVersion, 0x02, 0);
                 }
                 else if(ext == "tar")
                 {
                     system(("mkdir -p /data/voice/" + std::to_string(langId)).c_str());
-                    err += system(("tar -xf " + file_name + " --strip-components=1 -C /data/voice/" + std::to_string(langId)).c_str());
-                    err += system(("rm " + file_name).c_str());
+                    cmd = "tar -xf " + file_name + " --strip-components=1 -C /data/voice/" + std::to_string(langId);
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                        goto end;
+                    }
+                    cmd = "rm " + file_name;
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
                     //err += system(("mv /data/voice/" + std::to_string(langId) + "/*/* " + "/data/voice/" + std::to_string(langId)).c_str());
                     // 写入版本信息
-                    err += system(("echo " + std::to_string(fileVersion) + " > " + "/data/voice/" + std::to_string(langId) + "/ver.txt").c_str());
-                    err += system("rm -rf /data/voice/now");
-                    err += system(("ln -sf /data/voice/" + std::to_string(langId) + " " + "/data/voice/now").c_str());
-                    err += system(("echo " + std::to_string(langId) + " > " + "/data/voice/" + "/now.txt").c_str());
+                    cmd = "echo " + std::to_string(fileVersion) + " > " + "/data/voice/" + std::to_string(langId) + "/ver.txt";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "rm -rf /data/voice/now";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "ln -sf /data/voice/" + std::to_string(langId) + " " + "/data/voice/now";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "echo " + std::to_string(langId) + " > " + "/data/voice/" + "/now.txt";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
                 }
                 else if(ext == "zip")
                 {
-                    err += system(("unzip -o " + file_name + " -d /data/voice/" + std::to_string(langId)).c_str());
-                    err += system(("rm " + file_name).c_str());
-                    err += system(("mv /data/voice/" + std::to_string(langId) + "/*/* " + "/data/voice/" + std::to_string(langId)).c_str());
-                    err += system(("echo " + std::to_string(fileVersion) + " > " + "/data/voice/" + std::to_string(langId) + "/ver.txt").c_str());
-                    err += system("rm -rf /data/voice/now");
-                    err += system(("ln -sf /data/voice/" + std::to_string(langId) + " " + "/data/voice/now").c_str());
-                    err += system(("echo " + std::to_string(langId) + " > " + "/data/voice/" + "/now.txt").c_str());
+                    cmd = "mkdir -p /data/voice/" + std::to_string(langId);
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "unzip -o " + file_name + " -d /data/voice/" + std::to_string(langId);
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                        goto end;
+                    }
+                    cmd = "rm " + file_name;
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "mv /data/voice/" + std::to_string(langId) + "/*/* " + "/data/voice/" + std::to_string(langId);
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "echo " + std::to_string(fileVersion) + " > " + "/data/voice/" + std::to_string(langId) + "/ver.txt";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "rm -rf /data/voice/now";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
+                    cmd = "ln -sf /data/voice/" + std::to_string(langId) + " " + "/data/voice/now";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                        //goto end;
+                    }
+                    cmd = "echo " + std::to_string(langId) + " > " + "/data/voice/" + "/now.txt";
+                    err += system(cmd.c_str());
+                    if(err != 0)
+                    {
+                        LOGE(TAG, "cmd: {}, err: {}", cmd, err);
+                    }
                     //TuyaReportVoiceDownLoadResult(dpId, version, langId, fileVersion, 0x02, 0);
                 }
 
-                if(err == 0)
                 {
+                    // 删除下载的文件
+                    system(("rm -f " + file_name).c_str());
+                    // 删除其他的语音包
+                    system(("find /data/voice -mindepth 1 -maxdepth 1 -type d ! -name \"" + std::to_string(langId) + "\" -exec rm -rf {} \\;").c_str());
+                    sleep(1);
                     TuyaReportVoiceDownLoadResult(dpId, version, langId, fileVersion, 0x03, 0);
                     PlayVoice(V_SEEK_ROBOT, 2);
+                    return;
                 }
-                else
+end:
                 {
                     LOGD(TAG, "语音包解压失败");
                     TuyaReportVoiceDownLoadResult(dpId, version, langId, fileVersion, 0x00, 0);

@@ -8,6 +8,7 @@
 #include "utilities/uni_log.h"
 
 #include "tuya_robot.h"
+#include "tuya_sweeper.h"
 void TuyaHandleDPCmd(TY_OBJ_DP_S *dp);
 /**
  * @brief  接收到 sdk obj dp 处理回调，注册到 SDK 中
@@ -58,5 +59,5 @@ void ty_cmd_handle_sync_to_cloud(void)
 VOID ty_cmd_handle_dp_query_objs(IN CONST TY_DP_QUERY_S* dp_query)
 {
     PR_DEBUG("[user cmd]recv query dp");
-    TuyaComm::Get()->ReportStatus();
+    RobotSweeper::Get()->ReportStatus();
 }

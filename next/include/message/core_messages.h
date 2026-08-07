@@ -6,6 +6,7 @@
 #include "mars_message/AppPartitionMerge.hpp"
 #include "mars_message/AppRestrictedArea.hpp"
 #include "mars_message/AppRoomClean.hpp"
+#include "mars_message/AppRoomCleanV2.hpp"
 #include "mars_message/AppSetCleaningSequence.hpp"
 #include "mars_message/AppSetRoomName.hpp"
 #include "mars_message/AppSetRoomProperties.hpp"

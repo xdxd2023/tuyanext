@@ -1241,7 +1241,7 @@ void * l2cap_server_pthread(void *pReserved)
             bt_att_unref(gatt_server.att);
             gatt_server.att = NULL;
         }
-        // close(l2cap_fd);
+        close(l2cap_fd);
         
         PR_DEBUG("Connection closed, ready for next client.\r\n");
     }
@@ -1274,6 +1274,14 @@ int tuya_gatt_init(void)
     }
     pthread_detach(l2cap_thread);
 
+    return LE_SUCCESS;
+}
+
+int tuya_gatt_close(void)
+{
+    // 这里不需要关闭 socket，因为它会在 accept 循环中被自动关闭
+    // 只需要确保 mainloop 能够退出即可
+    mainloop_quit();
     return LE_SUCCESS;
 }
 

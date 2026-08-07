@@ -1,0 +1,62 @@
+DP ID,功能点名称,标识符,数据传输类型,数据类型,功能点属性,上报频率限制,[object Object]
+1,巡航开关,switch_go,可下发可上报（rw）,bool,,,true：启动巡航 false：停止巡航
+2,暂停/继续,pause,可下发可上报（rw）,bool,,,true：暂停当前工作状态 false：继续当前工作状态
+3,回充开关,switch_charge,可下发可上报（rw）,bool,,,true：回充启动 false：回充停止
+4,模式,mode,可下发可上报（rw）,enum,"枚举值: smart, pose, manual, quick_mapping, automatic_cruise, fixed_point_monitoring",,"默认值（不可修改删除，否则影响控制面板逻辑）：smart - 自动模式，可接收语音、手势等指令，作为默认状态pose - 多点巡航模式manual - 手动模式quick_mapping - 快速建图模式；
+与上面的4个模式2选一：automatic_cruise-自动巡航，fixed_point_monitoring-定点监控"
+5,状态,status,只上报（ro）,enum,"枚举值: standby, charging, charge_done, playing, goto_charge, sleep, following, manual_control, smart, paused, goto_pos, pos_arrived, pos_unarrive, relocation_recharge, mapping, mapping_done, relocation",,默认值，可删除不需要的状态值： standby - 待机中 charging - 充电中 charge_done - 充电完成? playing - 陪玩中 goto_charge - 回充中 sleep - 休眠 following - 跟随中 manual_control-遥控中 smart - 自动巡航中 paused - 已暂停 goto_pos - 前往目标点中 pos_arrived - 目标点已到达 pos_unarrive - 目标点不可达 relocation_recharge-回充中重定位 mapping-建图中 mapping_done-建图完成 relocation-巡航中重定位，可在后面增加其他状态值，状态值尽量是状态的英文小写单词，如需要增加故障中状态，则为in_trouble
+23,电池电量,battery_percentage,只上报（ro）,value,"数值范围: 0-100,
+              间距: 1, 倍数: 0,
+              单位: %",,默认区间为0%—100%（没有小数点），如果需要显示为小数点，可以修改倍数参数，例如需要支持一位小数点，则倍数参数为1，上报的数值会经过计算，保留一位小数，例如上报589，经过换算后为58.9%
+24,音量设置,volume_set,可下发可上报（rw）,value,"数值范围: 0-100,
+              间距: 1, 倍数: 0,
+              单位: %",,默认区间为0—100，可自行修改区间，不支持小数点
+25,童锁开关,child_lock,可下发可上报（rw）,bool,,,
+27,一键寻宠,seek,可下发可上报（rw）,bool,,,设备发出预设的声音，吸引宠物
+28,故障上报,total_error,可下发可上报（rw）,raw,,,设备故障上报；16进制，每1byte表示一个故障，如0102041E代表同时发生故障1、故障2、故障4、故障30；00代表无故障/故障解除；按照故障序号配置面板多语言；
+29,机器灯效,robot_led_switch,可下发可上报（rw）,bool,,,"备注：默认打开 点击按钮关闭，按钮修改为关闭状态，灯不长亮 
+前置条件：勿扰条件判断优先与按键灯常亮功能"
+36,补光灯开关,fill_light_switch,可下发可上报（rw）,bool,,,
+37,隐私模式,basic_private,可下发可上报（rw）,bool,,,隐私模式设置，true：关闭摄像头、音频；false：开启摄像头、音频
+43,移动方向,movement_direction,可下发可上报（rw）,value,"数值范围: 0-360,
+              间距: 1, 倍数: 0,
+              单位: °",,移动方向， 设置云能力三选一 4 个方向/ 8个方向 / 360度方向
+44,运动停止,movement_stops,可下发可上报（rw）,bool,,,移动方向控制运动的停止操作
+45,速度,speed,可下发可上报（rw）,value,"数值范围: 0-60,
+              间距: 1, 倍数: 0,
+              单位: ",,数值型速度设置
+48,定时休眠,timed_basic_private,可下发可上报（rw）,raw,,,设置定时休眠任务时间
+50,屏幕表情灯,expression_light,可下发可上报（rw）,bool,,,
+51,激光设置,laser,可下发可上报（rw）,enum,"枚举值: laser_on, laser_off, laser_flashing",,默认值，点击切换激光模式： laser_on-激光常亮 laser_off-激光关闭 laser_flashing-激光闪烁
+52,自动陪玩,playing,可下发可上报（rw）,bool,,,true：一键陪玩；false：陪玩结束
+53,智能跟随,follow,可下发可上报（rw）,bool,,,true：智能跟随；false：停止跟随
+54,一键投食,automatic_feeding,可下发可上报（rw）,bool,,,零食投喂
+56,打开录像,open_video_recording,可下发可上报（rw）,bool,,,
+57,红外夜视,basic_nightvision,可下发可上报（rw）,enum,"枚举值: close, open, automatic",,"默认值，0-关闭, 1-开启, 2-自动"
+58,时间水印,basic_osd,可下发可上报（rw）,bool,,,设置页面功能，true打开水印，false关闭水印
+59,横竖屏切换,screen_switch,可下发可上报（rw）,bool,,,横竖屏切换控制
+60,SD卡录像,record_switch,可下发可上报（rw）,bool,,,true为打开，false为关闭 功能关闭时，不录像到SD卡
+61,录像模式,record_mode,可下发可上报（rw）,enum,"枚举值: incident_video, continuous_video",,存储卡设置 SD卡录像模式选择，0为事件录像（检测到宠物移动再录像到SD卡），1为连续录像
+62,清空SD卡,sd_format,可下发可上报（rw）,bool,,,
+63,存储卡容量,sd_storge,只上报（ro）,string,,,单位改为kb --- 3503775744|778977280|2718158848 其中第一字符串是总容量，第二个字符串是已使用的容量，第三个是剩余容量
+64,存储卡状态,sd_status,只上报（ro）,value,"数值范围: 1-5,
+              间距: 1, 倍数: 0,
+              单位: ",,sd卡状态，1-正常，2-异常，3-空间不足，4-正在格式化，5-无SD卡；
+65,格式化状态,sd_format_state,只上报（ro）,value,"数值范围: -20000-20000,
+              间距: 1, 倍数: 0,
+              单位: ",,返回错误码： -2000：SD卡正在格式化 -2001：SD卡格式化异常 -2002：无SD卡 -2003：SD卡错误 //正数为格式化进度
+66,录音文件,file_no,只上报（ro）,string,,,用于录音文件下载成功的判断，有多条录音下载存在设备时，用英文逗号隔开上报
+69,音频ID,audio_id,可下发可上报（rw）,string,,,音频id使用
+72,恢复出厂设置,factory_reset,可下发可上报（rw）,bool,,,
+73,设备重启,device_restart,可下发可上报（rw）,bool,,,
+74,切换视角,switch_perspective,可下发可上报（rw）,enum,"枚举值: view_one, view_two",,"默认值，0-视角1, 1-视角2"
+75,屏幕转动,screen_rotation,可下发可上报（rw）,value,"数值范围: -9-45,
+              间距: 1, 倍数: 0,
+              单位: °",,数值型转动角度设置
+76,速度设置,speed_set,可下发可上报（rw）,enum,"枚举值: fast_speed, medium_speed, slow_speed",,"【与DP45二选一】枚举型的速度设置选择该DP点，设备移速默认值：0-慢速, 1-中速, 2-快速"
+78,逗猫棒,cat_teaser,可下发可上报（rw）,enum,"枚举值: up, down",,
+80,适配器电源切换,power_change,可下发可上报（rw）,bool,,,00电池供电，01电源供电，当上报00时，面板上电池电量提醒图标换为「插头」图标
+83,驱赶,drive_away,可下发可上报（rw）,bool,,,
+84,一键投球,pitching,可下发可上报（rw）,bool,,,
+86,画面翻转,screen_flip,可下发可上报（rw）,bool,,,true：上下翻转；false：不翻转
+212,主动消息推送,initiative_message,可下发可上报（rw）,raw,,,主动消息推送

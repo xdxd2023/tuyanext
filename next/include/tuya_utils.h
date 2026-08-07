@@ -20,7 +20,7 @@ typedef struct {
 Point TuyaXYToMars(int x, int y);
 int MarsXToTuya(Point p);
 int MarsYToTuya(Point p);
-bool TuyaLoadKey(const char *path, std::string &id, std::string &uuid, std::string &authKey);
+bool TuyaLoadKey(const char *path, std::string &id, std::string &uuid, std::string &authKey, std::string & robot_type);
 bool SoftVersion(const char *path, std::string &soft_version, std::string &mcu_version, std::string &system_version);
 bool UpdateSoftVersion(const char *path, const std::string &soft_version, const std::string &mcu_version, const std::string &system_version);
 // 版本格式:xx.xx.xx ,version1 > version2 返回 1, version1 < version2 返回 -1，其他返回 0
@@ -40,3 +40,4 @@ bool ToTuyaVirtualWall(const AppVirtualWall &appVirtualWall, uint8_t cmd, std::v
 bool ToTuyaRestrictedArea(AppRestrictedArea &appRestrictedArea, uint8_t cmd, std::vector<uint8_t> &tuyaRestrictedArea);
 bool MkdirFolder(const char *path);
 bool ReadFile(const char *path, FILE_INFO *pStrFileInfo);
+std::string md5sum(const std::string& file_path) ;

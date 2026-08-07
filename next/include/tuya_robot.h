@@ -1,21 +1,59 @@
 #pragma once
 
+#include <pthread.h>
+#include <map>
+#include <string>
+
 #include <lcm/lcm-cpp.hpp>
 
+#include "tuya_cloud_com_defs.h"
+#include "tuya_dp_utils.h"
 #include "message/core_messages.h"
 #include "message/tuya_messages.h"
+#include "mars_message/AppSpotClean.hpp"
 
 using namespace mars_message;
 
+typedef void (*RobotDpHandler)(TY_OBJ_DP_S *dp);
+typedef void (*RobotRawDpHandler)(int dpId, uint8_t *data, int len);
+
+class RobotDevice
+{
+public:
+    virtual ~RobotDevice() = default;
+
+    virtual void Init() = 0;
+
+    virtual void OnMap(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppMap *msg) = 0;
+    virtual void OnPath(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppPath *msg) = 0;
+    virtual void OnCmd(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const Debug *msg) = 0;
+    virtual void OnEvent(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const Event *msg) = 0;
+    virtual void OnSaveMap(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const tuya_message::RobotEvent *msg) = 0;
+    virtual void OnUpdateMap(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const tuya_message::RobotEvent *msg) = 0;
+    virtual void OnTest(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const Event *msg) = 0;
+
+    virtual void ReportStatus() = 0;
+    virtual void ReportDeviceInfo() = 0;
+    virtual void ReportMap() = 0;
+    virtual void ReportPath() = 0;
+    virtual void ReportMapAll() = 0;
+    virtual void ReportAll() = 0;
+
+    virtual void HandleDPCmd(TY_OBJ_DP_S *dp) = 0;
+    virtual void HandleRawDPCmd(int dpId, uint8_t *data, int len) = 0;
+
+    virtual const std::map<int, TuyaType> *DpTypes() const
+    {
+        return NULL;
+    }
+
+    virtual int GetDpId(RobotDpHandler handler) const = 0 ;
+
+    virtual int GetRawDpId(RobotRawDpHandler handler) const = 0 ;
+};
+
 class TuyaComm
 {
-private:
-    GridMap         map;
-    AppPath         path;
-    AppPartsLife    partsLife;
-    AppCleanInfo    cleanInfo;
-    AppVirtualWall  virtualWall;
-    AppRestrictedArea   restrictedArea;
     int handlerId;
     TuyaComm()
     {
@@ -32,22 +70,6 @@ public:
     void SetLcm(lcm::LCM *lcm)
     {
         lcm_ = lcm;
-        lcm_->subscribe("ty_Map", &TuyaComm::OnMap, this);
-        lcm_->subscribe("ty_Path", &TuyaComm::OnPath, this);
-        lcm_->subscribe("ty_VirtualWall", &TuyaComm::OnVirtualWall, this);
-        lcm_->subscribe("ty_RestrictedArea", &TuyaComm::OnRestrictedArea, this);
-        lcm_->subscribe("ty_CleanRecord", &TuyaComm::OnCleanRecord, this);
-        lcm_->subscribe("ty_m_schedule", &TuyaComm::OnSchedule, this);
-
-        //lcm_->subscribe("APPCMD", &TuyaComm::OnCmd, this);
-        lcm_->subscribe("ty_robot_state", &TuyaComm::OnSweeperStatus, this);
-        lcm_->subscribe("ty_PartsLife", &TuyaComm::OnPartsLife, this);
-        lcm_->subscribe("ty_CleanInfo", &TuyaComm::OnCleanInfo, this);
-        lcm_->subscribe("ty_SaveMap", &TuyaComm::OnSaveMap, this);
-        lcm_->subscribe("ty_UpdateMap", &TuyaComm::OnUpdateMap, this);
-        lcm_->subscribe("Mevt", &TuyaComm::OnEvent, this);
-        lcm_->subscribe("Kevt", &TuyaComm::OnEvent, this);
-        lcm_->subscribe("Mtest", &TuyaComm::OnTest, this);
     }
 
     template <class MessageType>
@@ -92,36 +114,18 @@ public:
         handlerId = pthread_self();
         return lcm_->handleTimeout(timeoutMs);
     }
-
-public:
-    void OnMap(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppMap *msg);
-    void OnPath(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppPath *msg);
-    void OnCmd(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const Debug *msg);
-    void OnSweeperStatus(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const tuya_message::RobotState *msg);
-    void OnPartsLife(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppPartsLife *msg);
-    void OnCleanInfo(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppCleanInfo *msg);
-    void OnVirtualWall(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppVirtualWall *msg);
-    void OnRestrictedArea(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppRestrictedArea *msg);
-    void OnCleanRecord(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppCleanRecord *msg);
-    void OnSchedule(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppLocalAlert *msg);
-    void OnEvent(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const Event *msg);
-    void OnSaveMap(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const tuya_message::RobotEvent *msg);
-    void OnUpdateMap(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const tuya_message::RobotEvent *msg);
-    void OnTest(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const Event *msg);
-public:
-    void ReportStatus();
-    void ReportDeviceInfo();
-    void ReportMap();
-    void ReportPath();
-    void ReportMapAll();
-    void ReportAll();
-    void ReportPartsLife();
-    void ReportCleanInfo();
-    bool ReportCleanRecords(int recordId, int cleanTime, int cleanArea, int cleanMode, int workMode, int cleaningResult, int startMethod);
 };
 
-void TuyaReportStatus(SweeperStatus status);
+RobotDevice *GetRobot();
 void TuyaHandleRawDPCmd(int dpId, uint8_t *data, int len);
 void PlayVoice(int v, int param);
 void DevicePairingSuccess(void);
 void CameraLed(int on, int reason);
+int TuyaBatteryGet(void);
+#ifdef __cplusplus
+extern "C" {
+#endif
+void BleOn(bool on);
+#ifdef __cplusplus
+}
+#endif

@@ -18,7 +18,7 @@
 #include "tuya_ring_buffer.h"
 
 #include "tuya_app_media_demo.h"
-
+#include "tuya_robot.h"
 
 typedef struct
 {
@@ -117,6 +117,7 @@ STATIC VOID tuya_app_ss_pb_get_audio_cb(IN UINT_T pb_idx, IN CONST MEDIA_FRAME_T
     return;
 }
 
+int tuya_live_video = 0;
 
 /**
  * @brief  音视频 event 回调具体处理
@@ -138,12 +139,18 @@ INT_T tuya_sweeper_av_event_cb(IN CONST INT_T channel, IN CONST MEDIA_STREAM_EVE
         C2C_TRANS_CTRL_VIDEO_START* parm = (C2C_TRANS_CTRL_VIDEO_START*)args;
         PR_DEBUG("chn[%u] video start", parm->channel);
         /*这里是 APP 通知设备开始播放视频信息，用户可以在此次做必要的业务逻辑*/
+        tuya_live_video = 1;
+        mars_message::Event aiCmd = {1, 1};
+        TuyaComm::Get()->Publish("AiCmd", &aiCmd);
         break;
     }
     case MEDIA_STREAM_LIVE_VIDEO_STOP: {
         C2C_TRANS_CTRL_VIDEO_STOP* parm = (C2C_TRANS_CTRL_VIDEO_STOP*)args;
         PR_DEBUG("chn[%u] video stop", parm->channel);
         /*这里是 APP 通知设备停止播放视频信息，用户可以在此次做必要的业务逻辑*/
+        tuya_live_video = 0;
+        mars_message::Event aiCmd = {1, 0};
+        TuyaComm::Get()->Publish("AiCmd", &aiCmd);
         break;
     }
     case MEDIA_STREAM_LIVE_AUDIO_START: {

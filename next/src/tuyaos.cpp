@@ -30,6 +30,7 @@ OPERATE_RET tuya_sdk_mqtt_online_sys_loop(void);
 #include "tuya_app_simple_start.h"
 #include "tuya_app_rt_map_send_demo.h"
 #include "tuya_app_net_sync_demo.h"
+#include "tuya_app_av_demo.h"
 #endif
 
 bool tuya_is_online(void);
@@ -77,7 +78,6 @@ int tuyaos_post_init(void)
     {
         return ret;
     }
-
 #if defined(TY_ROBOT_MEDIA_ENABLE) && (TY_ROBOT_MEDIA_ENABLE == 1)
     ret = ty_media_local_storage(); // 本地存储
     if (ret != OPRT_OK)
@@ -112,6 +112,12 @@ int tuyaos_post_init(void)
 
 #if defined(TY_ROBOT_MEDIA_ENABLE) && (TY_ROBOT_MEDIA_ENABLE == 1)
     //tuya_av_start(); // 开始塞音视频流数据
+#ifdef RV1106_TUYAOS
+    ret = tuya_av_stream_init(); //音视频任务初始化，需要在设备上线之后去启动
+    if (ret != OPRT_OK) {
+        return ret;
+    }
+#endif
 #endif
     return 0;
 }

@@ -52,6 +52,11 @@ elseif(ENABLE_RV1106_TUYAOS)
     file(GLOB TUYA_APP_SOURCE "next/src/tuya_apps/rvc/rv1106/*.c" "next/src/tuya_apps/rvc/rv1106/*.cpp")
     include_directories(next/src/tuya_apps/rvc/rv1106/include)
     add_subdirectories_recursively(${TUYAOS}/vendor/arm-rv1106-linux-gnueabihf-gcc-10.4.0/tuyaos/tuyaos_adapter/include)
+    # set(LIBC_TYPE "glibc")
+    # set(TYPE "lib")
+    # add_subdirectory(ai)
+    # link_directories(ai/lib/${LIBC_TYPE})
+    # include_directories(ai/include)
 else()
     message(FATAL_ERROR "Please specify a TUYAOS version by setting ENABLE_XXXX_TUYAOS to ON.")
 endif() 
@@ -99,7 +104,10 @@ add_executable(${PROJECT_NAME}  next/src/tuyanext.cpp
                                 next/src/tuyaos.cpp
                                 next/src/tuya_utils.cpp
                                 next/src/tuya_robot.cpp
+                                next/src/tuya_sweeper.cpp
+                                next/src/tuya_dp_utils.cpp
                                 next/src/tuya_dp_function.cpp
+                                next/src/tuya_pet.cpp
                                 next/src/tuya_enums.cpp
                                 next/src/tkl_wifi.c
                                 next/src/tkl_bluetooth.c
@@ -116,6 +124,29 @@ add_executable(${PROJECT_NAME}  next/src/tuyanext.cpp
 # get_target_property(COMPILE_FLAGS ${PROJECT_NAME} COMPILE_OPTIONS )
 # list(REMOVE_ITEM COMPILE_FLAGS -O3)
 # set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_OPTIONS "${COMPILE_FLAGS}" )
+
+if(ENABLE_RV1106_TUYAOS)
+# ai
+# target_link_libraries(${PROJECT_NAME} ai)
+# target_link_libraries(${PROJECT_NAME}
+#                     ${OpenCV_LIBS}
+#                     rknnmrt
+#                     Threads::Threads
+#                     sample_comm
+#                     rockit
+#                     rockchip_mpp
+#                     rkaiq
+#                     pthread
+#                     rtsp
+#                     stdc++
+#                     func_none
+#                     c
+#                     m
+#                     rt
+#                     dl
+#                     rga
+#                     )
+endif()
 
 # spdlog
 target_link_libraries(${PROJECT_NAME} spdlog::spdlog_header_only)

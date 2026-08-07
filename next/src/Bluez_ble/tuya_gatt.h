@@ -61,6 +61,7 @@ void tuya_gatt_register_write_req_event(void(*cb)(int handle, uint16_t uuid, uin
 
 
 void tuya_gatt_reset(void);
+int tuya_gatt_close(void);
 #ifdef __cplusplus
 }
 #endif

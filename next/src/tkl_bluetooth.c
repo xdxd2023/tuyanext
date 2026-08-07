@@ -208,11 +208,14 @@ bool bt_start()
     return check_hci0_runnning();
 }
 
-
+extern bool tuyaIsPairMode;
 OPERATE_RET tkl_ble_stack_init(UCHAR_T role)
 {
     PR_INFO("tkl_ble_stack_init");
-
+    if(!tuyaIsPairMode)
+    {
+        return OPRT_COM_ERROR;
+    }
     g_cache_queue = CreateQueueObj(32, SIZEOF(BLE_CACHE_DATA_T));
     if (!g_cache_queue) {
         PR_ERR("CreateQueueObj error");
@@ -364,127 +367,174 @@ OPERATE_RET tkl_ble_gatts_value_notify(USHORT_T conn_handle, USHORT_T char_handl
     PR_INFO("tkl_ble_gatts_value_notify, chr_handle: 0x%04x", char_handle);
 
     tuya_bluez_le_gatts_value_notify(char_handle, p_data, length);
-
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_stack_deinit(UCHAR_T role)
 {
+    PR_INFO("tkl_ble_stack_deinit, role: %d", role);
+    tuya_bluez_deinit();
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_stack_gatt_link(USHORT_T *p_link)
 {
+    PR_INFO("tkl_ble_stack_gatt_link");
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_addr_set(TKL_BLE_GAP_ADDR_T CONST *p_peer_addr)
 {
+    PR_INFO("tkl_ble_gap_addr_set");
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_address_get(TKL_BLE_GAP_ADDR_T *p_peer_addr)
 {
+    PR_INFO("tkl_ble_gap_address_get");
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_scan_start(TKL_BLE_GAP_SCAN_PARAMS_T CONST *p_scan_params)
 {
+    PR_INFO("tkl_ble_gap_scan_start");
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_scan_stop(VOID)
 {
+    PR_INFO("tkl_ble_gap_scan_stop");
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_connect(TKL_BLE_GAP_ADDR_T CONST *p_peer_addr, TKL_BLE_GAP_SCAN_PARAMS_T CONST *p_scan_params, TKL_BLE_GAP_CONN_PARAMS_T CONST *p_conn_params)
 {
+    PR_INFO("tkl_ble_gap_connect");
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_disconnect(USHORT_T conn_handle, UCHAR_T hci_reason)
 {
+    PR_INFO("tkl_ble_gap_disconnect, conn_handle: %d, hci_reason: %d", conn_handle, hci_reason);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_conn_param_update(USHORT_T conn_handle, TKL_BLE_GAP_CONN_PARAMS_T CONST *p_conn_params)
 {
+    PR_INFO("tkl_ble_gap_conn_param_update, conn_handle: %d", conn_handle);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_tx_power_set(UCHAR_T role, INT_T tx_power)
 {
+    PR_INFO("tkl_ble_gap_tx_power_set, role: %d, tx_power: %d", role, tx_power);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_rssi_get(USHORT_T conn_handle)
 {
+    PR_INFO("tkl_ble_gap_rssi_get, conn_handle: %d", conn_handle);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gap_name_set(CHAR_T *p_name)
 {
+    PR_INFO("tkl_ble_gap_name_set, name: %s", p_name);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gatts_value_set(USHORT_T conn_handle, USHORT_T char_handle, UCHAR_T *p_data, USHORT_T length)
 {
+    PR_INFO("tkl_ble_gatts_value_set, conn_handle: %d, char_handle: %d, length: %d", conn_handle, char_handle, length);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gatts_value_get(USHORT_T conn_handle, USHORT_T char_handle, UCHAR_T *p_data, USHORT_T length)
 {
+    PR_INFO("tkl_ble_gatts_value_get, conn_handle: %d, char_handle: %d, length: %d", conn_handle, char_handle, length);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gatts_value_indicate(USHORT_T conn_handle, USHORT_T char_handle, UCHAR_T *p_data, USHORT_T length)
 {
+    PR_INFO("tkl_ble_gatts_value_indicate, conn_handle: %d, char_handle: %d, length: %d", conn_handle, char_handle, length);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gatts_exchange_mtu_reply(USHORT_T conn_handle, USHORT_T server_rx_mtu)
 {
+    PR_INFO("tkl_ble_gatts_exchange_mtu_reply, conn_handle: %d, server_rx_mtu: %d", conn_handle, server_rx_mtu);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gattc_all_service_discovery(USHORT_T conn_handle)
 {
+    PR_INFO("tkl_ble_gattc_all_service_discovery, conn_handle: %d", conn_handle);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gattc_all_char_discovery(USHORT_T conn_handle, USHORT_T start_handle, USHORT_T end_handle)
 {
+    PR_INFO("tkl_ble_gattc_all_char_discovery, conn_handle: %d, start_handle: %d, end_handle: %d", conn_handle, start_handle, end_handle);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gattc_char_desc_discovery(USHORT_T conn_handle, USHORT_T start_handle, USHORT_T end_handle)
 {
+    PR_INFO("tkl_ble_gattc_char_desc_discovery, conn_handle: %d, start_handle: %d, end_handle: %d", conn_handle, start_handle, end_handle);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gattc_write_without_rsp(USHORT_T conn_handle, USHORT_T char_handle, UCHAR_T *p_data, USHORT_T length)
 {
+    PR_INFO("tkl_ble_gattc_write_without_rsp, conn_handle: %d, char_handle: %d, length: %d", conn_handle, char_handle, length);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gattc_write(USHORT_T conn_handle, USHORT_T char_handle, UCHAR_T *p_data, USHORT_T length)
 {
+    PR_INFO("tkl_ble_gattc_write, conn_handle: %d, char_handle: %d, length: %d", conn_handle, char_handle, length);
+    
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gattc_read(USHORT_T conn_handle, USHORT_T char_handle)
 {
+    PR_INFO("tkl_ble_gattc_read, conn_handle: %d, char_handle: %d", conn_handle, char_handle);
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_gattc_exchange_mtu_request(USHORT_T conn_handle, USHORT_T client_rx_mtu)
 {
+    PR_INFO("tkl_ble_gattc_exchange_mtu_request, conn_handle: %d, client_rx_mtu: %d", conn_handle, client_rx_mtu);
+
+
     return OPRT_OK;
 }
 
 OPERATE_RET tkl_ble_vendor_command_control(USHORT_T opcode, VOID_T *user_data, USHORT_T data_len)
 {
+    PR_INFO("tkl_ble_vendor_command_control, opcode: %d, data_len: %d", opcode, data_len);
+
     return OPRT_NOT_SUPPORTED;
 }
 #else

@@ -7,6 +7,8 @@
 #include "tuya_utils.h"
 #include "tuyaos.h"
 #include "voice.h"
+#include "time_tick.h"
+#include "tkl_bluetooth.h"
 using namespace mars_message;
 #define TAG "TUY"
 
@@ -35,6 +37,7 @@ std::string soft_version;
 std::string MCU_version ;
 std::string system_version;
 
+std::string robot_type = "Sweeper";
 
 class TestHandler
 {
@@ -78,11 +81,15 @@ public:
     }
 };
 
+bool tuyaIsPairMode = false;
 
 int main(int argc, char ** argv)
 {
     LOGVERSION("v1.0.15");
     //StackTrace stackTrack;
+    TuyaLoadKey(APP_DEFAULT_KEY, id, uuid, authKey, robot_type);
+
+
     lcm::LCM lcm;
     if(!lcm.good())
     {
@@ -93,7 +100,18 @@ int main(int argc, char ** argv)
     TuyaComm::Get()->Subscribe("Mget", &TestHandler::OnGet, &testHandler);
     TuyaComm::Get()->Subscribe("Mset", &TestHandler::OnSet, &testHandler);
 
-    TuyaLoadKey(APP_DEFAULT_KEY, id, uuid, authKey);
+    uint64_t startTime = 0;
+    if(argc == 2 && std::string(argv[1]) == "reset")
+    {
+        startTime = TimeTick::Ms();
+        BleOn(false);
+        sleep(3);
+        system("bluetoothctl disconnect");
+        tuyaIsPairMode = true;
+    }
+
+    GetRobot()->Init();
+
     std::ofstream uuid_file("/tmp/uuid.txt");
     if (uuid_file.is_open()) {
         uuid_file << uuid;
@@ -121,13 +139,23 @@ int main(int argc, char ** argv)
             }
             if(!is_online)
             {
+                tkl_ble_stack_deinit(0);
+                sleep(1);
+                BleOn(true);
                 is_online = true;
-                TuyaComm::Get()->ReportAll();
+                GetRobot()->ReportAll();
             }
         }
         else
         {
             is_online = false;
+        }
+        if(startTime != 0 && TimeTick::Ms() - startTime > 180 * 1000)
+        {
+            tkl_ble_stack_deinit(0);
+            sleep(1);
+            BleOn(true);
+            startTime = 0;
         }
     }   
     return 0;

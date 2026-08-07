@@ -1,0 +1,24 @@
+{
+  "C_Cpp.intelliSenseEngine": "Default",
+  "C_Cpp.errorSquiggles": "Enabled",
+  "C_Cpp.compilerPath": "/usr/bin/clang",
+  "C_Cpp.intelliSenseMode": "linux-clang-x64",
+  "C_Cpp.compileCommands": "/home/grt/ls/reality/depends/xdsrc/tuyanext/build/compile_commands.json",
+  "C_Cpp.includePath": [
+    "${workspaceFolder}/include",
+    "${workspaceFolder}/src",
+    "${workspaceFolder}/ai/include"
+  ],
+  "editor.semanticHighlighting.enabled": true,
+  "C_Cpp.enhancedColorization": "Enabled",
+  "editor.semanticTokenColorCustomizations": {
+    "enabled": true,
+    "rules": {
+      "class": "#ff8800",
+      "struct": "#ff8800",
+      "type": "#ff8800",
+      "enum": "#ff8800",
+      "namespace": "#dcdcaa"
+    }
+  }
+}

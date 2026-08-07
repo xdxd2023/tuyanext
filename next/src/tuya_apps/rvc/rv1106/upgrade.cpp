@@ -164,25 +164,25 @@ INT_T ty_user_upgrade_inform_cb(IN CONST FW_UG_S* fw)
     PR_DEBUG("fw->sw_ver:%s", fw->sw_ver);
     PR_DEBUG("fw->file_size:%u", fw->file_size);
     // Check if the /data/version directory exists
-    if (access("/data/version", F_OK) == -1) {
+    if (access("/tmp/version", F_OK) == -1) {
         PR_DEBUG("Directory /data/version does not exist");
-        if (mkdir("/data/version", 0755) == -1) {
+        if (mkdir("/tmp/version", 0755) == -1) {
             PR_ERR("Failed to create /data/version directory");
             return OPRT_COM_ERROR;
         }
-        PR_DEBUG("Created /data/version directory");
+        PR_DEBUG("Created /tmp/version directory");
     } else {
-        PR_DEBUG("Directory /data/version already exists");
+        PR_DEBUG("Directory /tmp/version already exists");
     }
 
     // Create file descriptor for the upgrade.zip file
     FILE *p_upgrade_fd = NULL;
-    p_upgrade_fd = fopen("/data/version/upgrade.zip", "wb");
+    p_upgrade_fd = fopen("/tmp/version/upgrade.zip", "wb");
     if (p_upgrade_fd == NULL) {
-        PR_ERR("Failed to create upgrade file: /data/version/upgrade.zip");
+        PR_ERR("Failed to create upgrade file: /tmp/version/upgrade.zip");
         return OPRT_COM_ERROR;
     }
-    PR_DEBUG("Created upgrade file: /data/version/upgrade.zip fd:%p", p_upgrade_fd);
+    PR_DEBUG("Created upgrade file: /tmp/version/upgrade.zip fd:%p", p_upgrade_fd);
 
     // The file pointer will be passed to the callback function
 

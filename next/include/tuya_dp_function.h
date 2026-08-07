@@ -168,6 +168,7 @@ void DP_HandleStationLightDisplaySwitch(TY_OBJ_DP_S *dp);
 void DP_HandleStationHotFan(TY_OBJ_DP_S *dp);
 void DP_HandleStationHotWater(TY_OBJ_DP_S *dp);
 void DP_HandleStationHotFanTime(TY_OBJ_DP_S *dp);
+void DP_HandleStationSelfClean(TY_OBJ_DP_S *dp);
 
 void TuyaReportVirtualWall(int dpId, uint8_t cmd, AppVirtualWall *msg);
 void TuyaReportRestrictedArea(int dpId, uint8_t cmd, AppRestrictedArea *msg);

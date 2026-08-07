@@ -63,6 +63,8 @@ int tuya_bluez_init(void)
 int tuya_bluez_deinit(void)
 {
     PR_DEBUG("tuya_bluez_deinit -------------------");
+    tuya_gatt_close();
+    g_bluez_inited = FALSE;
     return 0;
 }
 

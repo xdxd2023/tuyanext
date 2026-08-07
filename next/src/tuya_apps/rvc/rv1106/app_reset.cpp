@@ -7,12 +7,11 @@
  **********************************************************************************/
 #include <stdio.h>
 #include <string.h>
-
+#include "utils/log_.h"
 #include "tuya_error_code.h"
 #include "tuya_iot_wifi_api.h"
 #include "utilities/uni_log.h"
 
-//#include "utils/log_.h"
 #include "tuya_robot.h"
 #include "tuya_app_reset_demo.h"
 
@@ -42,7 +41,7 @@ VOID ty_sdk_app_reset_cb(GW_RESET_TYPE_E type)
         //开发者自行业务上做逻辑，如灯效，声音等
         //注意需要重启设备
         {
-            //LOGD(TAG, "本地重置");
+            LOGD(TAG, "本地重置");
             mars_message::Event evt = {0};
             if(!TuyaComm::Get()->Send("ty_unactive", &evt, 200))
             {
@@ -55,7 +54,7 @@ VOID ty_sdk_app_reset_cb(GW_RESET_TYPE_E type)
         //开发者自行业务上做逻辑，如灯效，声音等
         //注意需要重启设备
         {
-            //LOGD(TAG, "APP 重置");
+            LOGD(TAG, "APP 重置");
             mars_message::Event evt = {0};
             if(!TuyaComm::Get()->Send("ty_unactive", &evt, 200))
             {

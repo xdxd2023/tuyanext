@@ -137,8 +137,8 @@ static OPERATE_RET ty_robot_media_sdk_init(void)
     p_media_infos.av_encode_info.video_fps[E_IPC_STREAM_VIDEO_MAIN] = 30; /* FPS */ //一秒钟内连续播放的 30 帧
     p_media_infos.av_encode_info.video_gop[E_IPC_STREAM_VIDEO_MAIN] = 30; /* GOP */ //关键帧，该值的大小影响视频解密的效率及质量
     p_media_infos.av_encode_info.video_bitrate[E_IPC_STREAM_VIDEO_MAIN] = TUYA_VIDEO_BITRATE_1M; /* 传输速率 */
-    p_media_infos.av_encode_info.video_width[E_IPC_STREAM_VIDEO_MAIN] = 640; /* 单帧分辨率的宽度*/
-    p_media_infos.av_encode_info.video_height[E_IPC_STREAM_VIDEO_MAIN] = 360; /* 单帧分辨率的高度 */
+    p_media_infos.av_encode_info.video_width[E_IPC_STREAM_VIDEO_MAIN] = 1280; /* 单帧分辨率的宽度*/
+    p_media_infos.av_encode_info.video_height[E_IPC_STREAM_VIDEO_MAIN] = 720; /* 单帧分辨率的高度 */
     p_media_infos.av_encode_info.video_freq[E_IPC_STREAM_VIDEO_MAIN] = 90000; /* 摄像头的时钟频率 */
     p_media_infos.av_encode_info.video_codec[E_IPC_STREAM_VIDEO_MAIN] = TUYA_CODEC_VIDEO_H264; /* 编码方式 */
 
@@ -275,6 +275,10 @@ OPERATE_RET ty_sys_start(GW_WF_START_MODE connect_mode, CHAR_T* p_token, const c
     if (OPRT_OK != ret) {
         PR_ERR("ty robot media sdk init failed\n");
         return ret;
+    }
+    else
+    {
+        printf("ty robot media sdk init ok -----------------------------------\n");
     }
     /***开发者业务上需要初始化的接口可以在此完成***/
 

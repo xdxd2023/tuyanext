@@ -36,7 +36,13 @@ public:
             std::string path = "/tmp/xdlogs/";
             path += GetProcessName();
             path += ".log";
-            auto file = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, 1024*1024, 2);
+            size_t logSize = 1024*1024;
+            const char* envLogSize = std::getenv("XD_LOG_SIZE");
+            if (envLogSize != nullptr)
+            {
+                logSize = std::stoul(envLogSize);
+            }
+            auto file = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, logSize, 2);
             logger->sinks().push_back(file);
         }
 
