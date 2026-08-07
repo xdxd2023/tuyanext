@@ -93,23 +93,44 @@ public:
     }
     static MB_POOL create_pool(uint64_t size, uint32_t cnt, int type)
     {
-        MB_POOL_CONFIG_S PoolCfg;
-	    memset(&PoolCfg, 0, sizeof(MB_POOL_CONFIG_S));
-        PoolCfg.u64MBSize = size; // 1024 * 1024; // 1MB
-        PoolCfg.u32MBCnt = cnt;   // 10;
-        PoolCfg.enRemapMode = MB_REMAP_MODE_NONE;
-        PoolCfg.enAllocType = (MB_ALLOC_TYPE_E)type; // MB_ALLOC_TYPE_MMAP;
-        PoolCfg.enDmaType = MB_DMA_TYPE_NONE;
-        PoolCfg.bPreAlloc = RK_FALSE;
-        PoolCfg.bNotDelete = RK_FALSE;
+        // 依次尝试多种配置(内核/rockit 版本差异可能导致某一种失败)
+        // {allocType, dmaType, remapMode, bPreAlloc}
+        static const int variants[][4] = {
+            {MB_ALLOC_TYPE_DMA,    MB_DMA_TYPE_NONE,    MB_REMAP_MODE_NONE,   0}, // 0: 默认(IOMMU, 不预分配)
+            {MB_ALLOC_TYPE_DMA,    MB_DMA_TYPE_CMA,     MB_REMAP_MODE_CACHED, 1}, // 1: CMA + 预分配 + 缓存映射
+            {MB_ALLOC_TYPE_DMA,    MB_DMA_TYPE_NONE,    MB_REMAP_MODE_CACHED, 1}, // 2: IOMMU + 预分配
+            {MB_ALLOC_TYPE_DMA,    MB_DMA_TYPE_CMA,     MB_REMAP_MODE_NONE,   0}, // 3: CMA, 不预分配
+            {MB_ALLOC_TYPE_DMA,    MB_DMA_TYPE_NONE,    MB_REMAP_MODE_CACHED, 0}, // 4: IOMMU + 缓存映射, 不预分配
+            {MB_ALLOC_TYPE_MALLOC, 0,                   0,                    0}, // 5: 普通 malloc, 不依赖 DMA heap
+        };
+        const int variant_cnt = sizeof(variants) / sizeof(variants[0]);
+        MB_POOL pool = 0;
 
-        MB_POOL pool = RK_MPI_MB_CreatePool(&PoolCfg);
-        if (pool == NULL)
+        for (int i = 0; i < variant_cnt; i++)
         {
-            printf("RK_MPI_MB_CreatePool failed\n");
-            return NULL;
+            MB_POOL_CONFIG_S PoolCfg;
+            memset(&PoolCfg, 0, sizeof(MB_POOL_CONFIG_S));
+            PoolCfg.u64MBSize = size;
+            PoolCfg.u32MBCnt = cnt;
+            PoolCfg.enAllocType = (MB_ALLOC_TYPE_E)variants[i][0];
+            PoolCfg.enDmaType = (MB_DMA_TYPE_E)variants[i][1];
+            PoolCfg.enRemapMode = (MB_REMAP_MODE_E)variants[i][2];
+            PoolCfg.bPreAlloc = (RK_BOOL)variants[i][3];
+            PoolCfg.bNotDelete = RK_FALSE;
+
+            pool = RK_MPI_MB_CreatePool(&PoolCfg);
+            if (pool != 0 && pool != MB_INVALID_POOLID)
+            {
+                printf("create_pool variant %d OK (alloc=%d dma=%d remap=%d pre=%d), pool=%u\n",
+                       i, variants[i][0], variants[i][1], variants[i][2], variants[i][3], pool);
+                return pool;
+            }
+            printf("create_pool variant %d FAILED (alloc=%d dma=%d remap=%d pre=%d)\n",
+                   i, variants[i][0], variants[i][1], variants[i][2], variants[i][3]);
         }
-        return pool;
+
+        printf("RK_MPI_MB_CreatePool all variants failed\n");
+        return 0;
     }
     static MB_BLK get_mb(MB_POOL pool, uint64_t u64Size, int block)
     {
@@ -191,8 +212,9 @@ public:
         printf("%s: %llu ms, total: %llu ms\n", msg, (us_end - us_last) / 1000, (us_end - us_start) / 1000);
         us_last = us_end;
     }
-    void fps(const char *msg)
+    int fps(const char *msg)
     {
+        int r = 0;
         uint64_t us_end = media_sys::get_time_us();
         if (us_fps == 0) // 1 second
         {
@@ -201,10 +223,12 @@ public:
         if(us_end - us_fps >= 1000000)
         {
             printf("%s: %d fps\n", msg, fps_count);
-            fps_count = 0;
+            r = fps_count;
             us_fps = us_end;
+            fps_count = 0;
         }
         fps_count++;
+        return r;
     }
 };
 
@@ -363,7 +387,7 @@ public:
 
         stVpssChnAttr.enChnMode = VPSS_CHN_MODE_USER;
         stVpssChnAttr.enDynamicRange = DYNAMIC_RANGE_SDR8;
-        stVpssChnAttr.enPixelFormat = RK_FMT_BGR888;
+        stVpssChnAttr.enPixelFormat = RK_FMT_YUV420SP;
         stVpssChnAttr.stFrameRate.s32SrcFrameRate = -1;
         stVpssChnAttr.stFrameRate.s32DstFrameRate = -1;
         stVpssChnAttr.u32Width = width;
@@ -544,8 +568,9 @@ public:
 
         if (enType == RK_VIDEO_ID_AVC)
         {
-            stAttr.stRcAttr.enRcMode = VENC_RC_MODE_H264AVBR;
-            stAttr.stRcAttr.stH264Cbr.u32BitRate = 200 * 1024;
+            // CBR + 合理码率(720p 建议 1~4Mbps),原 AVBR 模式却用 CBR 结构体,参数全为 0
+            stAttr.stRcAttr.enRcMode = VENC_RC_MODE_H264CBR;
+            stAttr.stRcAttr.stH264Cbr.u32BitRate = 2 * 1024 * 1024;
             stAttr.stRcAttr.stH264Cbr.u32Gop = 20;
         }
         else if (enType == RK_VIDEO_ID_HEVC)
@@ -561,14 +586,14 @@ public:
         }
 
         stAttr.stVencAttr.enType = enType;
-        stAttr.stVencAttr.enPixelFormat = RK_FMT_RGB888;
+        stAttr.stVencAttr.enPixelFormat = RK_FMT_YUV420SP;
         if (enType == RK_VIDEO_ID_AVC)
             stAttr.stVencAttr.u32Profile = H264E_PROFILE_HIGH;
         stAttr.stVencAttr.u32PicWidth = width;
         stAttr.stVencAttr.u32PicHeight = height;
         stAttr.stVencAttr.u32VirWidth = width;
         stAttr.stVencAttr.u32VirHeight = height;
-        stAttr.stVencAttr.u32StreamBufCnt = 2;
+        stAttr.stVencAttr.u32StreamBufCnt = 4;
         stAttr.stVencAttr.u32BufSize = width * height * 3 / 2;
         stAttr.stVencAttr.enMirror = MIRROR_NONE;
 

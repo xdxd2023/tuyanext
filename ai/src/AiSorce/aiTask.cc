@@ -28,10 +28,28 @@
 
 #include "mpi.hpp"
 #include "libai.h"
+#include "rk_mpi_rgn.h"
+#include "im2d.h"
+#include "RgaUtils.h"
 
 
 #define TAG "TuyaAI"
 
+// RGN OSD 配置
+#define RGN_MAX_DETECT_BOX  10       // 最大检测框数量
+#define RGN_OVERLAY_HANDLE  100      // 时间 Overlay 的 handle
+#define RGN_OVERLAY_WIDTH   256      // Overlay 宽度 (16 对齐)
+#define RGN_OVERLAY_HEIGHT  48       // Overlay 高度 (16 对齐)
+
+// #define ENABLE_VPSS   // 板子 RGA 驱动问题导致 VPSS 通道无输出 (BUF_EMPTY),改用 VI 直出
+// #define ENABLE_RTSP 1
+#define ENABLE_AI
+#define ENABLE_ENCODE
+// RK1106 RGA 支持 YUV->RGBA 转换
+#define USE_RGA_ACCELERATION 1
+
+// 帧率限制: 降低 CPU 占用 (可按需调整, 15~30)
+#define TARGET_FPS  20
 
 typedef struct
 {
@@ -59,8 +77,7 @@ float H_DUTY = 0;	//480.00/DISP_HEIGHT
 // #define DISP_WIDTH 1920
 // #define DISP_HEIGHT 1080
 
-// #define ENABLE_VPSS
-#define ENABLE_RTSP 0
+
 
 // disp size
 int width = DISP_WIDTH;
@@ -73,35 +90,100 @@ float scale;
 int leftPadding;
 int topPadding;
 
-bool enShowTime = true;
-bool enableAi = true;
-bool enableFps = true;
 
-void A_SetShowVidoTime(bool power)
+bool _enableAI = false;
+bool _enableEncode = false;
+bool _enableTime = true;
+bool _enableFPS = true;
+
+void aiEnableProfile(AI_PROFILE_TYPE_E profile,bool enable)
 {
-	enShowTime = power;
+	switch(profile)
+	{
+		case PROFILE_AI:
+			_enableAI = enable;
+			break;
+		case PROFILE_ENCODE:
+			_enableEncode = enable;
+			break;
+		case PROFILE_TIME:
+			_enableTime = enable;
+			break;
+		case PROFILE_FPS:
+			_enableFPS = enable;
+			break;
+		default:
+			break;
+	}
+}
+bool aiIsProfileEnabled(AI_PROFILE_TYPE_E profile)
+{
+	switch(profile)
+	{
+		case PROFILE_AI:
+			return _enableAI;
+		case PROFILE_ENCODE:
+			return _enableEncode;
+		case PROFILE_TIME:
+			return _enableTime;
+		case PROFILE_FPS:
+			return _enableFPS;
+		default:
+			return false;
+	}
+}
+// cv::Mat letterbox(cv::Mat input)
+// {
+// 	float scaleX = (float)model_width / (float)width;
+// 	float scaleY = (float)model_height / (float)height;
+// 	scale = scaleX < scaleY ? scaleX : scaleY;
+
+// 	int inputWidth = (int)((float)width * scale);
+// 	int inputHeight = (int)((float)height * scale);
+
+// 	leftPadding = (model_width - inputWidth) / 2;
+// 	topPadding = (model_height - inputHeight) / 2;
+
+// 	cv::Mat inputScale;
+// 	cv::resize(input, inputScale, cv::Size(inputWidth, inputHeight), 0, 0, cv::INTER_NEAREST);
+// 	cv::Mat letterboxImage(model_width, model_height, CV_8UC3, cv::Scalar(0, 0, 0));
+// 	cv::Rect roi(leftPadding, topPadding, inputWidth, inputHeight);
+// 	inputScale.copyTo(letterboxImage(roi));
+
+// 	return letterboxImage;
+// }
+
+cv::Mat letterbox(const cv::Mat& input)
+{
+    int width = input.cols;
+    int height = input.rows;
+
+    float scale = std::min(
+        (float)model_width / width,
+        (float)model_height / height
+    );
+
+    int newW = cvRound(width * scale);
+    int newH = cvRound(height * scale);
+
+    int padW = (model_width - newW) / 2;
+    int padH = (model_height - newH) / 2;
+
+    static cv::Mat resized;
+    static cv::Mat output;
+
+    resized.create(newH, newW, CV_8UC3);
+    output.create(model_height, model_width, CV_8UC3);
+    output.setTo(cv::Scalar(0,0,0));
+
+    cv::resize(input, resized, cv::Size(newW, newH), 0, 0, cv::INTER_NEAREST);
+
+    resized.copyTo(output(cv::Rect(padW, padH, newW, newH)));
+
+    return output;
 }
 
-cv::Mat letterbox(cv::Mat input)
-{
-	float scaleX = (float)model_width / (float)width;
-	float scaleY = (float)model_height / (float)height;
-	scale = scaleX < scaleY ? scaleX : scaleY;
 
-	int inputWidth = (int)((float)width * scale);
-	int inputHeight = (int)((float)height * scale);
-
-	leftPadding = (model_width - inputWidth) / 2;
-	topPadding = (model_height - inputHeight) / 2;
-
-	cv::Mat inputScale;
-	cv::resize(input, inputScale, cv::Size(inputWidth, inputHeight), 0, 0, cv::INTER_NEAREST);
-	cv::Mat letterboxImage(model_width, model_height, CV_8UC3, cv::Scalar(0, 0, 0));
-	cv::Rect roi(leftPadding, topPadding, inputWidth, inputHeight);
-	inputScale.copyTo(letterboxImage(roi));
-
-	return letterboxImage;
-}
 
 void mapCoordinates(int *x, int *y)
 {
@@ -200,6 +282,161 @@ bool enableFlow = false;
 void SetAiFlowPower(bool power)
 {
 	enableFlow = power;
+}
+
+// ==================== RGA 硬件加速函数 ====================
+#if USE_RGA_ACCELERATION
+// RGA 硬件加速：YUV420SP -> RGBA -> resize -> BGR (YOLO 输入)
+// RK1106 RGA 支持 YUV->RGBA 转换，但不支持直接转 BGR/RGB
+// 输出 letterbox 的 padding 和 scale 参数供坐标反算使用
+static int rga_letterbox(void* src_yuv, int src_w, int src_h,
+                         void* dst_bgr, int dst_w, int dst_h,
+                         int* left_padding, int* top_padding, float* out_scale) {
+    // 计算缩放比例和 padding
+    float scaleX = (float)dst_w / (float)src_w;
+    float scaleY = (float)dst_h / (float)src_h;
+    float scale_factor = scaleX < scaleY ? scaleX : scaleY;
+    
+    int scaled_w = (int)((float)src_w * scale_factor);
+    int scaled_h = (int)((float)src_h * scale_factor);
+    
+    *left_padding = (dst_w - scaled_w) / 2;
+    *top_padding = (dst_h - scaled_h) / 2;
+    *out_scale = scale_factor;
+    
+    // 分配临时 RGBA 缓冲区用于 CSC (RK1106 RGA 支持 YUV->RGBA)
+    int rgba_size = src_w * src_h * 4;
+    void* tmp_rgba = malloc(rgba_size);
+    if (!tmp_rgba) {
+        printf("RGA: malloc tmp_rgba failed\n");
+        return -1;
+    }
+    
+    // 第一步：YUV420SP -> RGBA (颜色空间转换，RK1106 支持)
+    rga_buffer_t src_buf = wrapbuffer_virtualaddr(src_yuv, src_w, src_h, RK_FORMAT_YCbCr_420_SP);
+    rga_buffer_t tmp_buf = wrapbuffer_virtualaddr(tmp_rgba, src_w, src_h, RK_FORMAT_RGBA_8888);
+    
+    IM_STATUS status = imcvtcolor(src_buf, tmp_buf, RK_FORMAT_YCbCr_420_SP, RK_FORMAT_RGBA_8888);
+    if (status != IM_STATUS_SUCCESS) {
+        printf("RGA imcvtcolor YUV->RGBA failed: %s\n", imStrError(status));
+        free(tmp_rgba);
+        return -1;
+    }
+    
+    // 第二步：resize RGBA 到目标大小
+    int resize_rgba_size = scaled_w * scaled_h * 4;
+    void* resize_rgba = malloc(resize_rgba_size);
+    if (!resize_rgba) {
+        printf("RGA: malloc resize_rgba failed\n");
+        free(tmp_rgba);
+        return -1;
+    }
+    
+    rga_buffer_t resize_src = wrapbuffer_virtualaddr(tmp_rgba, src_w, src_h, RK_FORMAT_RGBA_8888);
+    rga_buffer_t resize_dst = wrapbuffer_virtualaddr(resize_rgba, scaled_w, scaled_h, RK_FORMAT_RGBA_8888);
+    
+    status = imresize(resize_src, resize_dst);
+    if (status != IM_STATUS_SUCCESS) {
+        printf("RGA imresize failed: %s\n", imStrError(status));
+        free(tmp_rgba);
+        free(resize_rgba);
+        return -1;
+    }
+    
+    free(tmp_rgba);
+    
+    // 第三步：RGBA -> BGR 并复制到目标位置 (带 padding)
+    // YOLO 需要 BGR 格式，所以需要转换并去掉 Alpha 通道
+    // 清空目标缓冲区 (黑色 padding)
+    memset(dst_bgr, 0, dst_w * dst_h * 3);
+    
+    unsigned char* dst_ptr = (unsigned char*)dst_bgr;
+    unsigned char* rgba_ptr = (unsigned char*)resize_rgba;
+    
+    for (int y = 0; y < scaled_h; y++) {
+        unsigned char* dst_row = dst_ptr + ((y + *top_padding) * dst_w + *left_padding) * 3;
+        unsigned char* src_row = rgba_ptr + y * scaled_w * 4;
+        for (int x = 0; x < scaled_w; x++) {
+            // RGBA -> BGR: R=src[0], G=src[1], B=src[2], A=src[3]
+            dst_row[x * 3 + 0] = src_row[x * 4 + 2];  // B
+            dst_row[x * 3 + 1] = src_row[x * 4 + 1];  // G
+            dst_row[x * 3 + 2] = src_row[x * 4 + 0];  // R
+        }
+    }
+    
+    free(resize_rgba);
+    
+    return 0;
+}
+#endif
+
+// ==================== RGN OSD 辅助函数 ====================
+
+// 创建 Overlay RGN (用于文字叠加)
+static int rgn_create_overlay(RGN_HANDLE handle, int vencChn, int w, int h, int posX, int posY) {
+	RGN_ATTR_S stRgnAttr;
+	RGN_CHN_ATTR_S stChnAttr;
+	MPP_CHN_S stChn;
+	RK_S32 s32Ret;
+
+	memset(&stRgnAttr, 0, sizeof(stRgnAttr));
+	stRgnAttr.enType = OVERLAY_RGN;
+	stRgnAttr.unAttr.stOverlay.enPixelFmt = RK_FMT_ARGB8888;
+	stRgnAttr.unAttr.stOverlay.stSize.u32Width = w;
+	stRgnAttr.unAttr.stOverlay.stSize.u32Height = h;
+	stRgnAttr.unAttr.stOverlay.u32CanvasNum = 2;
+
+	s32Ret = RK_MPI_RGN_Create(handle, &stRgnAttr);
+	if (s32Ret != RK_SUCCESS) {
+		printf("RK_MPI_RGN_Create OVERLAY %d failed: %x\n", handle, s32Ret);
+		return s32Ret;
+	}
+
+	stChn.enModId = RK_ID_VENC;
+	stChn.s32DevId = 0;
+	stChn.s32ChnId = vencChn;
+
+	memset(&stChnAttr, 0, sizeof(stChnAttr));
+	stChnAttr.bShow = RK_TRUE;
+	stChnAttr.enType = OVERLAY_RGN;
+	stChnAttr.unChnAttr.stOverlayChn.stPoint.s32X = (posX / 16) * 16;  // 16 对齐
+	stChnAttr.unChnAttr.stOverlayChn.stPoint.s32Y = (posY / 16) * 16;
+	stChnAttr.unChnAttr.stOverlayChn.u32FgAlpha = 255;
+	stChnAttr.unChnAttr.stOverlayChn.u32BgAlpha = 128;  // 半透明背景
+	stChnAttr.unChnAttr.stOverlayChn.u32Layer = 0;
+
+	s32Ret = RK_MPI_RGN_AttachToChn(handle, &stChn, &stChnAttr);
+	if (s32Ret != RK_SUCCESS) {
+		printf("RK_MPI_RGN_AttachToChn OVERLAY %d failed: %x\n", handle, s32Ret);
+	}
+	return s32Ret;
+}
+
+// 更新 Overlay 内容 (使用 OpenCV 绘制后更新)
+static int rgn_update_overlay(RGN_HANDLE handle, cv::Mat& bgraImg) {
+	RGN_CANVAS_INFO_S stCanvasInfo;
+	RK_S32 s32Ret;
+
+	s32Ret = RK_MPI_RGN_GetCanvasInfo(handle, &stCanvasInfo);
+	if (s32Ret != RK_SUCCESS) {
+		return s32Ret;
+	}
+
+	memcpy((void*)stCanvasInfo.u64VirAddr, bgraImg.data, 
+		   bgraImg.cols * bgraImg.rows * 4);
+
+	return RK_MPI_RGN_UpdateCanvas(handle);
+}
+
+// 销毁 RGN
+static void rgn_destroy(RGN_HANDLE handle, int vencChn) {
+	MPP_CHN_S stChn;
+	stChn.enModId = RK_ID_VENC;
+	stChn.s32DevId = 0;
+	stChn.s32ChnId = vencChn;
+
+	RK_MPI_RGN_DetachFromChn(handle, &stChn);
+	RK_MPI_RGN_Destroy(handle);
 }
 
 char* ai_get_current_process_dir(char* buf, size_t size) {
@@ -306,8 +543,8 @@ static int loadPar(const char *locationFilename, AiCalParSt_ *st)
 
 void *yoloThread(void *argv)
 {
-	printf("yoloThread start!\n");
-	system("RkLunch-stop.sh");
+	LOGD(TAG, "yoloThread start!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+	//system("RkLunch-stop.sh");
 
     char  cfg_path[256] = {0};
     ai_get_current_process_dir(cfg_path, 256);
@@ -337,6 +574,15 @@ void *yoloThread(void *argv)
 
 	uint64_t aiScanTimeSn = 0;
 
+	// venc 编码输出流
+	VENC_STREAM_S stFrame;
+	stFrame.pstPack = (VENC_PACK_S *)malloc(sizeof(VENC_PACK_S));
+	RK_U32 H264_TimeRef = 0;
+	VIDEO_FRAME_INFO_S stViFrame;
+
+	// 用于 AI 推理和绘制的 BGR 图像
+	cv::Mat frame(cv::Size(width, height), CV_8UC3);
+
 	printf("init rknn\n");
 	// Rknn model
 	char text[64];
@@ -347,29 +593,6 @@ void *yoloThread(void *argv)
 	init_yolov5_model(model_path, &rknn_app_ctx);
 	printf("init rknn model success!\n");
 	init_post_process();
-
-	// h264_frame
-	VENC_STREAM_S stFrame;
-	stFrame.pstPack = (VENC_PACK_S *)malloc(sizeof(VENC_PACK_S));
-	RK_U32 H264_TimeRef = 0;
-	VIDEO_FRAME_INFO_S stViFrame;
-
-	// Create Pool
-	MB_POOL src_Pool = media_sys::create_pool(width * height * 3, 1, MB_ALLOC_TYPE_DMA);
-	// Get MB from Pool
-	MB_BLK src_Blk = media_sys::get_mb(src_Pool, width * height * 3, RK_TRUE);
-
-	// Build h264_frame
-	VIDEO_FRAME_INFO_S h264_frame;
-	h264_frame.stVFrame.u32Width = width;
-	h264_frame.stVFrame.u32Height = height;
-	h264_frame.stVFrame.u32VirWidth = width;
-	h264_frame.stVFrame.u32VirHeight = height;
-	h264_frame.stVFrame.enPixelFormat = RK_FMT_BGR888;
-	h264_frame.stVFrame.u32FrameFlag = 160; // FRAME_FLAG_I | FRAME_FLAG_P;
-	h264_frame.stVFrame.pMbBlk = src_Blk;
-	unsigned char *data = (unsigned char *)media_sys::get_mb_viraddr(src_Blk);
-	cv::Mat frame(cv::Size(width, height), CV_8UC3, data);
 
 	// rkaiq init
 	RK_BOOL multi_sensor = RK_FALSE;
@@ -396,6 +619,8 @@ void *yoloThread(void *argv)
 		return NULL;
 	}
 
+	// 编码直接使用 VI 帧, 无需 MB pool 和每帧 memcpy
+
 	media_vi vi(0, width, height);
 	if (vi.init() != RK_SUCCESS)
 	{
@@ -406,18 +631,18 @@ void *yoloThread(void *argv)
 	//
 	//test_vpss_init(0, width, height);
 #ifdef ENABLE_VPSS
-	// if (vpss.init() != RK_SUCCESS)
-	// {
-	// 	printf("media_vpss init failed!\n");
-	// 	return NULL;
-	// }
+	if (vpss.init() != RK_SUCCESS)
+	{
+		printf("media_vpss init failed!\n");
+		return NULL;
+	}
 	printf("vpss ---------------------------------------------\n");
 	// bind vi and vpss
-	// if (media_sys::bind(&vi, &vpss) != RK_SUCCESS)
-	// {
-	// 	printf("media_sys bind vi and vpss failed!\n");
-	// 	return NULL;
-	// }
+	if (media_sys::bind(&vi, &vpss) != RK_SUCCESS)
+	{
+		printf("media_sys bind vi and vpss failed!\n");
+		return NULL;
+	}
 #endif
 	
 
@@ -428,16 +653,36 @@ void *yoloThread(void *argv)
 		return NULL;
 	}
 
+#ifdef ENABLE_ENCODE
+
+	// 创建时间显示 Overlay
+	
+	int rgnOverlayW = width/16*16;
+	int rgnOverlayH = height/16*16;
+	int overlayPosX = (width - rgnOverlayW)/2;
+	int overlayPosY = (height - rgnOverlayH)/2;
+	rgn_create_overlay(RGN_OVERLAY_HANDLE, 0, rgnOverlayW, rgnOverlayH, overlayPosX, overlayPosY);
+	
+	// 用于绘制时间的 BGRA 图像
+	cv::Mat osdTimeMat(rgnOverlayH, rgnOverlayW, CV_8UC4, cv::Scalar(0, 0, 0, 128));
+	
+	printf("RGN OSD init success!\n");
+#endif
+
 	int count = 0;
 	media_profile fps;
-	uint64_t fpsWindowStartUs = media_sys::get_time_us();
-	int fpsFrameCount = 0;
-	double displayFps = 0.0;
+	int fpsLast = 0;
+	uint64_t lastOsdUpdateMs = 0;   // OSD 文本刷新节流时间戳
 	while (1)
 	{
+		uint64_t frameStartUs = media_sys::get_time_us();   // 帧率限制用
 		// fps.fps("yoloThread fps-----------------------------------------");
-		usleep(1000);
 		// get vi frame
+		bool enableAI = _enableAI;
+		bool enableEncode = _enableEncode;
+		bool enableTime = _enableTime;
+		bool enableFPS = _enableFPS;
+
 #ifdef ENABLE_VPSS
 		s32Ret = vpss.get_chn_frame(&stViFrame, -1);
 #else
@@ -447,179 +692,216 @@ void *yoloThread(void *argv)
 		{
 			// 计算函数运行时间
 			// Start timing
-			media_profile profile(true);
+			media_profile profile(false);
 			// Process the frame after timing calculation
 			void *vi_data = media_sys::get_mb_viraddr(stViFrame.stVFrame.pMbBlk);
 			profile.time_ms("get_chn_frame");
 #if 1			
-			// 从摄像头读取的数据是 YUV420SP 格式
-			cv::Mat yuv420sp(height + height / 2, width, CV_8UC1, vi_data);
-			// 将 YUV420SP 格式转换为 BGR 格式
-			cv::Mat bgr(height, width, CV_8UC3, data);
-			cv::cvtColor(yuv420sp, bgr, cv::COLOR_YUV420sp2BGR);
-			frame = bgr;
-			fpsFrameCount++;
-			uint64_t fpsNowUs = media_sys::get_time_us();
-			uint64_t fpsElapsedUs = fpsNowUs - fpsWindowStartUs;
-			if (fpsElapsedUs >= 1000000)
-			{
-				displayFps = fpsFrameCount * 1000000.0 / fpsElapsedUs;
-				fpsFrameCount = 0;
-				fpsWindowStartUs = fpsNowUs;
-			}
+		
 #endif
-#if 1
 			// 计算函数运行时间
 			profile.time_ms("cvtColor");
 			
 
 			uint64_t timeThisMs = media_sys::get_time_ms();
 			int      difTime = timeThisMs - aiScanTimeSn;
-			LOGD(TAG, "Ai OBS difTime={} ms, enableAi={}", difTime, enableAi);
-			if(enableAi && abs(difTime) > 500)
+			bool     osdDirty = false;   // 本帧 OSD 是否有绘制内容
+			// OSD 文本(时间/FPS)每秒才变,降低刷新频率(5Hz)节省 CPU; AI 画框时强制刷新
+			bool     osdNeedUpdate = (timeThisMs - lastOsdUpdateMs >= 200);
+			if(abs(difTime) > 500)
 			{
-				
-				aiScanTimeSn = timeThisMs; 
-				// letterbox
-				cv::Mat letterboxImage = letterbox(frame);
-				memcpy(rknn_app_ctx.input_mems[0]->virt_addr, letterboxImage.data, model_width * model_height * 3);
-				// 计算函数运行时间
-				profile.time_ms("letterbox");
-				inference_yolov5_model(&rknn_app_ctx, &od_results);
-				profile.time_ms("inference_yolov5_model");
-			}
-			if(enableAi)
-			{
-				for (int i = 0; i < od_results.count; i++)
+				// 清屏: AI 帧(2Hz)或文本刷新节拍(5Hz)时才清,避免每帧 3.7MB
+				if (enableAI || osdNeedUpdate)
 				{
-					if (od_results.count >= 1 && (od_results.results[i].prop * 100) > 60)
+					osdTimeMat.setTo(cv::Scalar(0, 0, 0, 128));  // 半透明黑色背景
+				}
+				if(enableAI)
+				{
+					osdNeedUpdate = true;   // AI 画框需要立即刷新 OSD
+#if USE_RGA_ACCELERATION
+					// 使用 RGA 硬件加速：YUV420SP -> BGR + letterbox
+					unsigned char* letterbox_data = (unsigned char*)rknn_app_ctx.input_mems[0]->virt_addr;
+					int ret = rga_letterbox(vi_data, width, height, 
+											letterbox_data, model_width, model_height,
+											&leftPadding, &topPadding, &scale);
+					if (ret != 0) {
+						printf("RGA letterbox failed, fallback to OpenCV\n");
+						// 回退到 OpenCV
+						cv::Mat yuv420sp(height + height / 2, width, CV_8UC1, vi_data);
+						cv::Mat bgr(height, width, CV_8UC3);
+						cv::cvtColor(yuv420sp, bgr, cv::COLOR_YUV420sp2BGR);
+						cv::Mat letterboxImage = letterbox(bgr);
+						memcpy(letterbox_data, letterboxImage.data, model_width * model_height * 3);
+					}
+					aiScanTimeSn = timeThisMs;
+					profile.time_ms("RGA letterbox");
+#else
+					// 使用 OpenCV: YUV420SP -> BGR + letterbox
+					cv::Mat yuv420sp(height + height / 2, width, CV_8UC1, vi_data);
+					cv::Mat bgr(height, width, CV_8UC3);
+					cv::cvtColor(yuv420sp, bgr, cv::COLOR_YUV420sp2BGR);
+					profile.time_ms("OpenCV cvtColor");
+					frame = bgr;
+					aiScanTimeSn = timeThisMs;
+					cv::Mat letterboxImage = letterbox(frame);
+					memcpy(rknn_app_ctx.input_mems[0]->virt_addr, letterboxImage.data, model_width * model_height * 3);
+					profile.time_ms("OpenCV letterbox");
+#endif
+					inference_yolov5_model(&rknn_app_ctx, &od_results);
+					profile.time_ms("inference_yolov5_model");
+					
+					for (int i = 0; i < od_results.count; i++)
 					{
-						object_detect_result *det_result = &(od_results.results[i]);
-
-						sX = (int)(det_result->box.left);
-						sY = (int)(det_result->box.top);
-						eX = (int)(det_result->box.right);
-						eY = (int)(det_result->box.bottom);
-						mapCoordinates(&sX, &sY);
-						mapCoordinates(&eX, &eY);
-
-						printf("%s @ (%d %d %d %d) %.3f\n", coco_cls_to_name(det_result->cls_id),
-							sX, sY, eX, eY, det_result->prop);
-
-						cv::rectangle(frame, cv::Point(sX, sY),
-									cv::Point(eX, eY),
-									cv::Scalar(255, 0, 0), 1);
-
-						// memset((uint8_t *)text,0x00,sizeof(text));
-						// sprintf(text, "%s", coco_cls_to_name(det_result->cls_id));
-						// cv::putText(frame, text, cv::Point(sX+10, sY-10),
-						// 			cv::FONT_HERSHEY_COMPLEX, 1,
-						// 			cv::Scalar(255, 0, 0), 1);
-						//显示文本
+						if (od_results.count >= 1 && (od_results.results[i].prop * 100) > 60)
 						{
-							int eYdis = eY * H_DUTY + 1;
-							int eXdis = (((sX+eX)/2) + 1)*100/DISP_WIDTH;
-							float dis = A_CatchDisTem((float)eYdis);
-							float angle = A_CatchAngleTem(eXdis-50);
-							if(dis > 100){ dis = 100; }
-							if(dis < 0){ dis = 0; }
-							sprintf(text, "%s(%d) A=%0.1f D=%0.1f", coco_cls_to_name(det_result->cls_id), (int)(det_result->prop * 100),(angle),dis);
-							cv::putText(frame,text,cv::Point(sX, sY - 8),
-												cv::FONT_HERSHEY_COMPLEX_SMALL,1,
-												cv::Scalar(255,0,0),1);
+							object_detect_result *det_result = &(od_results.results[i]);
 
-							// tuya_message::Request req = {0};
-							// req.a = det_result->cls_id;
-							// req.b = angle;
-							// req.c = dis;
-							// TuyaComm::Get()->Publish("ai_obs", &req);
-							LOGD(TAG, "Ai OBS source eXdiLOGDs={} eYdis={} ",  eXdis , eYdis );
-							LOGD(TAG, "Ai OBS Pub id={} angle={} dis={}",  det_result->cls_id, angle, dis);
-							if(enableFlow == true && false)
-							{
-	#if 0
-								int direction =4;
-								//物体位姿居中，则调整前后距离
-								if(eXdis > 45 && eXdis < 55){
-									if(dis > 20){
-										direction = 0;
-										tuya_message::Request req = {direction};
-										tuya_message::Result res = {};
-										TuyaComm::Get()->Send("ty_direction", &req, &res);
-									}else{
-										direction = 4;
-										tuya_message::Request req = {direction};
-										tuya_message::Result res = {};
-										TuyaComm::Get()->Send("ty_direction", &req, &res);
-									}
-								}
-								//位姿不居中则调整左右位姿
-								else{
-									if(eXdis > 55){
-										direction = 3;
-										tuya_message::Request req = {direction};
-										tuya_message::Result res = {};
-										TuyaComm::Get()->Send("ty_direction", &req, &res);
-									}else{
-										direction = 2;
-										tuya_message::Request req = {direction};
-										tuya_message::Result res = {};
-										TuyaComm::Get()->Send("ty_direction", &req, &res);
-									}
-								}
+							sX = (int)(det_result->box.left);
+							sY = (int)(det_result->box.top);
+							eX = (int)(det_result->box.right);
+							eY = (int)(det_result->box.bottom);
+							mapCoordinates(&sX, &sY);
+							mapCoordinates(&eX, &eY);
+
+							// printf("%s @ (%d %d %d %d) %.3f\n", coco_cls_to_name(det_result->cls_id),
+							// 	sX, sY, eX, eY, det_result->prop);
+
+	#ifdef ENABLE_ENCODE
+							// 使用 RGN 硬件画框
+							cv::rectangle(osdTimeMat, cv::Point(sX, sY),
+										cv::Point(eX, eY),
+										cv::Scalar(255, 0, 255, 0), 2);
+
+	#else
+							cv::rectangle(frame, cv::Point(sX, sY),
+										cv::Point(eX, eY),
+										cv::Scalar(255, 0, 0), 1);
 	#endif
+
+							
+							//显示文本
+							{
+								int eYdis = eY * H_DUTY + 1;
+								int eXdis = (((sX+eX)/2) + 1)*100/DISP_WIDTH;
+								float dis = A_CatchDisTem((float)eYdis);
+								float angle = A_CatchAngleTem(eXdis-50);
+								if(dis > 100){ dis = 100; }
+								if(dis < 0){ dis = 0; }
+								sprintf(text, "%s(%d) A=%0.1f D=%0.1f", coco_cls_to_name(det_result->cls_id), (int)(det_result->prop * 100),(angle),dis);
+	#ifdef ENABLE_ENCODE
+								cv::putText(osdTimeMat, text, cv::Point(sX+5, sY-10),
+											cv::FONT_HERSHEY_COMPLEX, 1,
+											cv::Scalar(255, 0, 255, 0), 2);
+	#else
+								cv::putText(frame, text, cv::Point(sX+5, sY-10),
+											cv::FONT_HERSHEY_COMPLEX, 1,
+											cv::Scalar(0, 255, 0), 1);
+	#endif	
+								// tuya_message::Request req = {0};
+								// req.a = det_result->cls_id;make
+								// req.b = angle;
+								// req.c = dis;
+								// TuyaComm::Get()->Publish("ai_obs", &req);
+								LOGD(TAG, "Ai OBS source eXdiLOGDs={} eYdis={} ",  eXdis , eYdis );
+								LOGD(TAG, "Ai OBS Pub id={} angle={} dis={}",  det_result->cls_id, angle, dis);
 							}
 						}
 					}
+					profile.time_ms("draw rectangle");
+				}
+				if(enableTime == true && osdNeedUpdate){
+					time_t now;
+					struct tm *current_time;
+					now = time(NULL);
+					current_time = localtime(&now);
+					memset((uint8_t *)text,0x00,sizeof(text));
+					sprintf(text, "%02d:%02d:%02d", current_time->tm_hour,current_time->tm_min,current_time->tm_sec);
+#ifdef ENABLE_ENCODE
+					// 使用 RGN Overlay 显示时间
+					cv::putText(osdTimeMat, text, cv::Point(rgnOverlayW-180, 90), 
+								cv::FONT_HERSHEY_SIMPLEX, 1.0, 
+								cv::Scalar(0, 0, 0, 255), 2);  // 白色文字
+					cv::putText(osdTimeMat, text, cv::Point(rgnOverlayW-180-2, 90-2), 
+								cv::FONT_HERSHEY_SIMPLEX, 1.0, 
+								cv::Scalar(255, 255, 255, 255), 2);  // 白色文字
+					osdDirty = true;
+#else
+					cv::putText(frame, text, cv::Point(DISP_WIDTH-180, 90 ), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 0), 1);
+					cv::putText(frame, text, cv::Point(DISP_WIDTH-180-2, 90-2 ), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(255, 255, 255), 1);
+#endif
 				}
 			}
-			
-			profile.time_ms("draw rectangle");
-#endif
-			if(enShowTime == true){
-				time_t now;
-				struct tm *current_time;
-				now = time(NULL);
-				current_time = localtime(&now);
-				memset((uint8_t *)text,0x00,sizeof(text));
-				sprintf(text, "%02d:%02d:%02d", current_time->tm_hour,current_time->tm_min,current_time->tm_sec);
-				cv::putText(frame, text, cv::Point(DISP_WIDTH-180, 90 ), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 0), 1);
-				cv::putText(frame, text, cv::Point(DISP_WIDTH-180-2, 90-2 ), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(255, 255, 255), 1);
-			}
-			if(enableFps)
+			if(enableFPS)
 			{
-				memset((uint8_t *)text,0x00,sizeof(text));
-				snprintf(text, sizeof(text), "FPS: %.1f", displayFps);
-				cv::putText(frame, text, cv::Point(DISP_WIDTH-180, 125 ), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 0), 1);
-				cv::putText(frame, text, cv::Point(DISP_WIDTH-180-2, 125-2 ), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(255, 255, 255), 1);
+				int f = fps.fps("yoloThread fps-----------------------------------------");
+				if (f > 0) { fpsLast = f; }  // 每秒更新一次,中间保持上次值避免闪烁
+				if (osdNeedUpdate)   // 文本 5Hz 刷新, 降低 CPU
+				{
+					memset((uint8_t *)text,0x00,sizeof(text));
+					sprintf(text, "FPS: %d", fpsLast);
+#ifdef ENABLE_ENCODE
+					// 使用 RGN Overlay 显示 FPS
+					cv::putText(osdTimeMat, text, cv::Point(rgnOverlayW-180, 150), 
+								cv::FONT_HERSHEY_SIMPLEX, 1.0, 
+								cv::Scalar(0, 0, 0, 255), 2);  // 黑色文字
+					cv::putText(osdTimeMat, text, cv::Point(rgnOverlayW-180-2, 150-2), 
+								cv::FONT_HERSHEY_SIMPLEX, 1.0, 
+								cv::Scalar(255, 255, 255, 255), 2);  // 白色文字
+					osdDirty = true;
+#else
+					cv::putText(frame, text, cv::Point(DISP_WIDTH-180, 150), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 0), 1);
+					cv::putText(frame, text, cv::Point(DISP_WIDTH-180-2, 150-2), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(255, 255, 255), 1);
+#endif
+				}
 			}
+#ifdef ENABLE_ENCODE
+			// OSD 文本 5Hz 刷新一次, AI 画框时强制刷新, 降低 CPU
+			if (osdDirty && osdNeedUpdate)
+			{
+				rgn_update_overlay(RGN_OVERLAY_HANDLE, osdTimeMat);
+				lastOsdUpdateMs = timeThisMs;
+			}
+#endif
 			// encode h264
-			h264_frame.stVFrame.u32TimeRef = H264_TimeRef++;
-			h264_frame.stVFrame.u64PTS = media_sys::get_time_us();
-			memcpy(data, frame.data, width * height * 3 / 2);
-			venc.send_frame(&h264_frame, -1);
-			s32Ret = venc.get_stream(&stFrame, -1);
-			if (s32Ret == RK_SUCCESS)
+#ifdef ENABLE_ENCODE
+			if(enableEncode)
 			{
-				void *pData = media_sys::get_mb_viraddr(stFrame.pstPack->pMbBlk);
-				if (cb)
+				// 直接把 VI 帧(YUV420SP)喂给编码器, 省掉每帧 1.38MB memcpy 和 MB pool
+				stViFrame.stVFrame.u32TimeRef = H264_TimeRef++;
+				stViFrame.stVFrame.u64PTS = media_sys::get_time_us();
+				venc.send_frame(&stViFrame, -1);
+				s32Ret = venc.get_stream(&stFrame, -1);
+				if (s32Ret == RK_SUCCESS)
 				{
-					// Call the callback function with the video frame data
-					cb((uint8_t *)pData, stFrame.pstPack->u32Len, stFrame.pstPack->u64PTS, stFrame.stH264Info.enRefType);
-				}
-				#ifdef ENABLE_RTSP
-			// rtsp
+					void *pData = media_sys::get_mb_viraddr(stFrame.pstPack->pMbBlk);
+					if (cb)
+					{
+						// Call the callback function with the video frame data
+						cb((uint8_t *)pData, stFrame.pstPack->u32Len, stFrame.pstPack->u64PTS, stFrame.stH264Info.enRefType);
+					}
+	#ifdef ENABLE_RTSP
+				// rtsp
 
-				if(g_rtsplive && g_rtsp_session)
-				{
-					//printf("len = %d PTS = %d \n",stFrame.pstPack->u32Len, stFrame.pstPack->u64PTS);	
-					rtsp_tx_video(g_rtsp_session, (uint8_t *)pData, stFrame.pstPack->u32Len,
-								stFrame.pstPack->u64PTS);
-					rtsp_do_event(g_rtsplive);
+					if(g_rtsplive && g_rtsp_session)
+					{
+						//printf("len = %d PTS = %d \n",stFrame.pstPack->u32Len, stFrame.pstPack->u64PTS);	
+						rtsp_tx_video(g_rtsp_session, (uint8_t *)pData, stFrame.pstPack->u32Len,
+									stFrame.pstPack->u64PTS);
+						rtsp_do_event(g_rtsplive);
+					}
+	#endif
 				}
-#endif
+				profile.time_ms("encode h264");
+			}	
+		}
+		// 帧率限制, 降低 CPU 占用: 把循环控制在 TARGET_FPS
+		{
+			uint64_t frameElapsedUs = media_sys::get_time_us() - frameStartUs;
+			uint64_t frameIntervalUs = 1000000 / TARGET_FPS;
+			if (frameElapsedUs < frameIntervalUs)
+			{
+				usleep(frameIntervalUs - frameElapsedUs);
 			}
-			profile.time_ms("encode h264");
 		}
 #ifdef ENABLE_VPSS
 		s32Ret = vpss.release_chn_frame(&stViFrame);
@@ -635,22 +917,25 @@ void *yoloThread(void *argv)
 			RK_LOGE("RK_MPI_VI_ReleaseChnFrame fail %x", s32Ret);
 		}
 #endif
-		s32Ret = venc.release_stream(&stFrame);
-		if (s32Ret != RK_SUCCESS)
+		if(enableEncode)
 		{
-			RK_LOGE("RK_MPI_VENC_ReleaseStream fail %x", s32Ret);
+			s32Ret = venc.release_stream(&stFrame);
+			if (s32Ret != RK_SUCCESS)
+			{
+				RK_LOGE("RK_MPI_VENC_ReleaseStream fail %x", s32Ret);
+			}
 		}
+#endif
 		memset((uint8_t *)text,0x00,sizeof(text));
 	}
-	// Destory MB
-	media_sys::release_mb(src_Blk);
-	// Destory Pool
-	media_sys::destroy_pool(src_Pool);
-
 	SAMPLE_COMM_ISP_Stop(0);
 
+#ifdef ENABLE_ENCODE
+	rgn_destroy(RGN_OVERLAY_HANDLE, 0);
+#endif
+
 	free(stFrame.pstPack);
-#if ENABLE_RTSP
+#ifdef ENABLE_RTSP
 	if (g_rtsplive)
 		rtsp_del_demo(g_rtsplive);
 #endif
