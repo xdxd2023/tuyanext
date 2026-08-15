@@ -305,8 +305,15 @@ static int rga_letterbox(void* src_yuv, int src_w, int src_h,
     *out_scale = scale_factor;
     
     // 分配临时 RGBA 缓冲区用于 CSC (RK1106 RGA 支持 YUV->RGBA)
+    // 复用静态缓冲区, 避免每次 AI 推理都 malloc/free 3.7MB
     int rgba_size = src_w * src_h * 4;
-    void* tmp_rgba = malloc(rgba_size);
+    static void* tmp_rgba = NULL;
+    static int   tmp_rgba_cap = 0;
+    if (tmp_rgba_cap < rgba_size) {
+        free(tmp_rgba);
+        tmp_rgba = malloc(rgba_size);
+        tmp_rgba_cap = tmp_rgba ? rgba_size : 0;
+    }
     if (!tmp_rgba) {
         printf("RGA: malloc tmp_rgba failed\n");
         return -1;
@@ -323,12 +330,17 @@ static int rga_letterbox(void* src_yuv, int src_w, int src_h,
         return -1;
     }
     
-    // 第二步：resize RGBA 到目标大小
+    // 第二步：resize RGBA 到目标大小 (复用静态缓冲区)
     int resize_rgba_size = scaled_w * scaled_h * 4;
-    void* resize_rgba = malloc(resize_rgba_size);
+    static void* resize_rgba = NULL;
+    static int   resize_rgba_cap = 0;
+    if (resize_rgba_cap < resize_rgba_size) {
+        free(resize_rgba);
+        resize_rgba = malloc(resize_rgba_size);
+        resize_rgba_cap = resize_rgba ? resize_rgba_size : 0;
+    }
     if (!resize_rgba) {
         printf("RGA: malloc resize_rgba failed\n");
-        free(tmp_rgba);
         return -1;
     }
     
@@ -338,12 +350,8 @@ static int rga_letterbox(void* src_yuv, int src_w, int src_h,
     status = imresize(resize_src, resize_dst);
     if (status != IM_STATUS_SUCCESS) {
         printf("RGA imresize failed: %s\n", imStrError(status));
-        free(tmp_rgba);
-        free(resize_rgba);
         return -1;
     }
-    
-    free(tmp_rgba);
     
     // 第三步：RGBA -> BGR 并复制到目标位置 (带 padding)
     // YOLO 需要 BGR 格式，所以需要转换并去掉 Alpha 通道
@@ -363,8 +371,6 @@ static int rga_letterbox(void* src_yuv, int src_w, int src_h,
             dst_row[x * 3 + 2] = src_row[x * 4 + 0];  // R
         }
     }
-    
-    free(resize_rgba);
     
     return 0;
 }
@@ -690,9 +696,8 @@ void *yoloThread(void *argv)
 #endif
 		if (s32Ret == RK_SUCCESS)
 		{
-			// 计算函数运行时间
-			// Start timing
-			media_profile profile(false);
+			// 计算函数运行时间 (true 打印各阶段耗时, 用于定位 AI 推理瓶颈)
+			media_profile profile(true);
 			// Process the frame after timing calculation
 			void *vi_data = media_sys::get_mb_viraddr(stViFrame.stVFrame.pMbBlk);
 			profile.time_ms("get_chn_frame");

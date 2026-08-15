@@ -1,3 +1,4 @@
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <netinet/in.h>
@@ -28,11 +29,11 @@ Point TuyaXYToMars(int x, int y)
 
 int MarsXToTuya(Point p)
 {
-    return (((p.x) * 10) / _mapResolution);
+    return (int)std::lround(((p.x) * 10) / _mapResolution);
 }
 int MarsYToTuya(Point p)
 {
-    return (((p.y) * 10) / _mapResolution);
+    return (int)std::lround(((p.y) * 10) / _mapResolution);
 }
 
 bool TuyaLoadKey(const char *path, std::string &id, std::string &uuid, std::string &authKey, std::string & robot_type)
@@ -304,20 +305,50 @@ uint8_t PixelToTuyaPixelv2(int8_t p)
   return 0x00;
 }
 
+extern std::string robot_type;
 uint8_t Combine4Pixel(const int8_t *pix, int len)
 {
     uint8_t r = 0x0;
-    for (int i = 0; i < len; i++)
+    static int type = 0;
+    if(type == 0)
     {
-        uint8_t d = PixelToTuyaPixel(*pix++);
-        r <<= 2;
-        r |= d;
+        if(robot_type == "Sweeper")
+        {
+            type = 1;
+        }
+        else
+        {
+            type = 2;
+        }
     }
-    for (int i = len; i < 4; i++)
+    if(type == 1)
     {
-        r <<= 2;
-        r |= 0x3;
+        for (int i = 0; i < len; i++)
+        {
+            uint8_t d = PixelToTuyaPixel(*pix++);
+            r <<= 2;
+            r |= d & 0x3;
+        }
+        for (int i = len; i < 4; i++)
+        {
+            r <<= 2;
+            r |= 0x3;
+        }
     }
+    else
+    {
+         for (int i = 0; i < len; i++)
+        {
+            uint8_t d = PixelToTuyaPixel(*pix++);
+            r >>= 2;
+            r |= d << 6;
+        }
+        for (int i = len; i < 4; i++)
+        {
+            r >>= 2;
+            r |= 0x3 << 6;
+        }
+    }  
     return r;
 }
 

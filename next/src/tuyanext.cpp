@@ -121,6 +121,10 @@ int main(int argc, char ** argv)
     }
 
     SoftVersion(APP_VERSION_FILE, soft_version, MCU_version, system_version);
+    if(MCU_version.empty())
+    {
+        MCU_version = "1.0.0";
+    }
     LOGD(TAG, "soft_version: {}, MCU_version: {}, system_version: {}", soft_version, MCU_version, system_version);
     tuyaos_init(uuid.c_str(), authKey.c_str(), id.c_str(), soft_version.c_str(), MCU_version.c_str());
     bool is_post_init = false;

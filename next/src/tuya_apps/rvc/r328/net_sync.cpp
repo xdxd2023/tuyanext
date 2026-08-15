@@ -57,7 +57,12 @@ VOID ty_sdk_net_status_change_cb(IN CONST BYTE_T stat)
             //首次配网成功之后的业务处理可以在这里做，比如这边可以显示绿灯，语音播报如配网成功。
         } else {
             //设备正常上线状态，业务上可以在这里处理
-            PlayVoice(V_SERVER_CONNECTED, PLAY_QUEUE);
+            static bool first_online = true;
+            if(first_online)
+            {
+                first_online = false;
+                PlayVoice(V_SERVER_CONNECTED, PLAY_QUEUE);
+            }
         }
         ty_cmd_handle_sync_to_cloud(); // 上传支持的 dp 点信息（进行 dp 同步）
         break;
