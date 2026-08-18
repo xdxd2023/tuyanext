@@ -3,3 +3,6 @@ build*/
 *.tar.gz
 *.zip
 **/output**
+# Tuya SDK 交叉编译工具链（体积大，不入库）
+**/vendor/arm-openwrt-linux-gnueabi-*/
+**/vendor/arm-rv1106-linux-gnueabihf-*/
