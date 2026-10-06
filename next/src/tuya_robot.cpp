@@ -19,6 +19,7 @@
 #include "voice.h"
 #include "tuya_robot.h"
 #include "tuya_pet.h"
+#include "tuya_airbot.h"
 #include "tuya_sweeper.h"
 #include "tuya_enums.h"
 #include "tuya_dp_function.h"
@@ -53,6 +54,10 @@ RobotDevice *ResolveRobot()
     {
         return RobotSweeper::Get();
     }
+    else if(robot_type == "AirBot")
+    {
+        return RobotAirBot::Get();
+    }
     else
     {
         return RobotPet::Get();
@@ -84,6 +89,18 @@ void TuyaHandleDPCmd(TY_OBJ_DP_S *dp)
 {
     LOGD(TAG, "DP cmd: {}", dp->dpid);
     GetRobot()->HandleDPCmd(dp);
+}
+
+int TuyaAdvanceFuctionSet(COMPLEX_CMD_E cmd, void* param)
+{
+    LOGD(TAG, "Advance function set: {}", (int)cmd);
+    return 0;
+}
+
+int TuyaAdvanceFuctionQuery(COMPLEX_CMD_E cmd, void* param)
+{
+    LOGD(TAG, "Advance function query: {}", (int)cmd);
+    return 0;
 }
 
 void PlayVoice(int v, int param)

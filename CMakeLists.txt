@@ -108,6 +108,7 @@ add_executable(${PROJECT_NAME}  next/src/tuyanext.cpp
                                 next/src/tuya_dp_utils.cpp
                                 next/src/tuya_dp_function.cpp
                                 next/src/tuya_pet.cpp
+                                next/src/tuya_airbot.cpp
                                 next/src/tuya_enums.cpp
                                 next/src/tkl_wifi.c
                                 next/src/tkl_bluetooth.c

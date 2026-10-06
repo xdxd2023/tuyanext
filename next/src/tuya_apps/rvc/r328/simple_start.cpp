@@ -43,6 +43,9 @@
 // extern std::string MCU_version;
 // extern std::string system_version;
 
+OPERATE_RET rvc_advance_function_set(IN COMPLEX_CMD_E cmd, IN void* param);
+OPERATE_RET rvc_advance_function_query(IN COMPLEX_CMD_E cmd, IN void* param);
+
 /**
  * @brief  iot sdk 初始化
  * @param  [in] GW_WF_START_MODE 配网模式
@@ -58,7 +61,7 @@ static OPERATE_RET ty_iot_sdk_init(GW_WF_START_MODE connect_mode, CHAR_T* p_toke
         PR_DEBUG("iot sdk has started");
         return rt;
     }
-     PR_DEBUG("SDK Version:%s", tuya_iot_get_sdk_info()); //获取 sdk 版本
+    PR_DEBUG("SDK Version:%s", tuya_iot_get_sdk_info()); //获取 sdk 版本
     PR_DEBUG("system reset reason:[%d]", tal_system_get_reset_reason(NULL)); //测试 demo 中实现不了系统重启原因的打印，开发者自己去实现系统重启原因
 
     rt = ty_rvc_iot_init(); //机器人相关事件初始化
@@ -110,6 +113,8 @@ static OPERATE_RET ty_iot_sdk_init(GW_WF_START_MODE connect_mode, CHAR_T* p_toke
     //注意：开发者如有双固件的需求，请使用 tuya_iot_wf_dev_init 接口；开发者如只需要单固件的需求，请使用 tuya_iot_wf_soc_dev_init 接口
     TUYA_CALL_ERR_RETURN(tuya_iot_reg_get_wf_nw_stat_cb(ty_sdk_net_status_change_cb)); // wifi 状态回调
     //tuya_wifi_user_cfg("tuya", "tuya", p_token); //测试使用直接填入 p_token，实际开发不需要该接口，SDK 会处理
+
+    ty_rvc_complex_func_register(rvc_advance_function_set, rvc_advance_function_query);  //注册扫地机高级协议回调（如虚拟墙，房间属性之类）
 
     s_ty_iot_sdk_started = true;
     PR_DEBUG("tuya iot sdk start is complete");
