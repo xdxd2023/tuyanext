@@ -5,12 +5,12 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <openssl/md5.h>
 #include <string>
 
 #include "utils/log_.h"
 #include "utils/json.hpp"
 #include "lz4/lz4.h"
+#include "uni_md5.h"
 
 #include "tuya_utils.h"
 
@@ -902,9 +902,9 @@ bool ToTuyaRestrictedArea(AppRestrictedArea &appRestrictedArea, uint8_t cmd, std
 // 计算文件的 MD5 哈希值
 std::string md5sum(const std::string& file_path) 
 {
-    unsigned char c[MD5_DIGEST_LENGTH];
-    MD5_CTX mdContext;
-    MD5_Init(&mdContext);
+    unsigned char c[MD5_DECRYPT_LEN];
+    UNI_MD5_CTX_S mdContext;
+    uni_md5_init(&mdContext);
 
     std::ifstream file(file_path, std::ifstream::binary);
     if (!file) {
@@ -915,13 +915,15 @@ std::string md5sum(const std::string& file_path)
     char buffer[1024];
     while (file.good()) {
         file.read(buffer, sizeof(buffer));
-        MD5_Update(&mdContext, buffer, file.gcount());
+        if (file.gcount() > 0) {
+            uni_md5_update(&mdContext, reinterpret_cast<unsigned char *>(buffer), static_cast<unsigned int>(file.gcount()));
+        }
     }
 
-    MD5_Final(c, &mdContext);
+    uni_md5_final(&mdContext, c);
 
     std::ostringstream md5_string;
-    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i) {
+    for (int i = 0; i < MD5_DECRYPT_LEN; ++i) {
         md5_string << std::hex << std::setw(2) << std::setfill('0') << (int)c[i];
     }
 

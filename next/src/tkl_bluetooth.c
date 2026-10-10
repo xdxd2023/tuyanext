@@ -183,6 +183,16 @@ bool check_hci0_runnning()
 
 bool bt_start()
 {
+    /* A previous instance may have been killed while advertising, leaving an
+     * advertising set enabled in the controller.  In that state the WS73
+     * rejects LE Set Extended Advertising Parameters with 0x0c (Command
+     * Disallowed) until it is reset, so reset the controller to get a clean
+     * state before bringing up our own stack. */
+    system("hciconfig hci0 reset 2>/dev/null");
+    usleep(300000);
+    system("hciconfig hci0 up 2>/dev/null");
+    usleep(300000);
+
     if(check_hci0_runnning())
     {
         return true;
@@ -208,14 +218,13 @@ bool bt_start()
     return check_hci0_runnning();
 }
 
-extern bool tuyaIsPairMode;
 OPERATE_RET tkl_ble_stack_init(UCHAR_T role)
 {
     PR_INFO("tkl_ble_stack_init");
-    if(!tuyaIsPairMode)
-    {
-        return OPRT_COM_ERROR;
-    }
+    /* Always bring up the BLE stack: the Tuya SDK itself decides whether to
+     * advertise (unprovisioned / netcfg) or not.  Previously this was gated on
+     * tuyaIsPairMode, which is only true when started with "reset", so BLE
+     * netcfg never worked for a fresh device. */
     g_cache_queue = CreateQueueObj(32, SIZEOF(BLE_CACHE_DATA_T));
     if (!g_cache_queue) {
         PR_ERR("CreateQueueObj error");
