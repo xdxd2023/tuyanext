@@ -99,6 +99,7 @@ add_executable(${PROJECT_NAME}  next/src/tuyanext.cpp
                                 next/src/tuyaos.cpp
                                 next/src/tuya_utils.cpp
                                 next/src/tuya_robot.cpp
+                                next/src/tuya_advance_func.cpp
                                 next/src/tuya_sweeper.cpp
                                 next/src/tuya_dp_utils.cpp
                                 next/src/tuya_dp_function.cpp
