@@ -41,6 +41,17 @@ STATIC TKL_BLE_GATT_EVT_FUNC_CB __gatt_evt_cb = NULL;
 STATIC BOOL_T g_connected = FALSE;
 STATIC P_QUEUE_CLASS g_cache_queue = NULL;
 
+/* Cache of the last advertising data / scan response.  The WS73 controller
+ * discards the extended advertising data when LE Set Extended Advertising
+ * Parameters is (re)issued, and the Tuya SDK sets the data before calling
+ * tkl_ble_gap_adv_start() (which re-applies the parameters).  Keep a copy so
+ * the data can be re-sent right before advertising is enabled. */
+#define TKL_BLE_ADV_CACHE_MAX   251
+STATIC UCHAR_T  g_adv_data_cache[TKL_BLE_ADV_CACHE_MAX];
+STATIC USHORT_T g_adv_data_len = 0;
+STATIC UCHAR_T  g_scan_rsp_cache[TKL_BLE_ADV_CACHE_MAX];
+STATIC USHORT_T g_scan_rsp_len = 0;
+
 static USHORT_T tuya_conn_handle ={0};
 STATIC VOID __gatt_write_request_event_cb(int handle, UINT16_T uuid, UINT8_T *data, UINT8_T len)
 {
@@ -268,6 +279,17 @@ OPERATE_RET tkl_ble_gap_adv_start(TKL_BLE_GAP_ADV_PARAMS_T CONST *p_adv_params)
     };
     tuya_bluez_le_set_adv_params(&adv_param);
 
+    /* Re-apply the cached adv data / scan response: on this controller the
+     * extended advertising data set before LE Set Extended Advertising
+     * Parameters is lost, so re-send it after the parameters and before
+     * enabling advertising. */
+    if (g_adv_data_len) {
+        tuya_bluez_le_set_adv_data(g_adv_data_cache, g_adv_data_len);
+    }
+    if (g_scan_rsp_len) {
+        tuya_bluez_le_set_scan_rsp_data(g_scan_rsp_cache, g_scan_rsp_len);
+    }
+
     tuya_bluez_le_set_adv_enable(1);
 
     return OPRT_OK;
@@ -284,8 +306,16 @@ OPERATE_RET tkl_ble_gap_adv_rsp_data_set(TKL_BLE_DATA_T CONST *p_adv, TKL_BLE_DA
 {
     PR_INFO("tkl_ble_gap_adv_rsp_data_set");
 
-    tuya_bluez_le_set_adv_data(p_adv->p_data, p_adv->length);
-    tuya_bluez_le_set_scan_rsp_data(p_scan_rsp->p_data, p_scan_rsp->length);
+    if (p_adv && p_adv->p_data && p_adv->length) {
+        g_adv_data_len = (p_adv->length > TKL_BLE_ADV_CACHE_MAX) ? TKL_BLE_ADV_CACHE_MAX : p_adv->length;
+        memcpy(g_adv_data_cache, p_adv->p_data, g_adv_data_len);
+        tuya_bluez_le_set_adv_data(p_adv->p_data, p_adv->length);
+    }
+    if (p_scan_rsp && p_scan_rsp->p_data && p_scan_rsp->length) {
+        g_scan_rsp_len = (p_scan_rsp->length > TKL_BLE_ADV_CACHE_MAX) ? TKL_BLE_ADV_CACHE_MAX : p_scan_rsp->length;
+        memcpy(g_scan_rsp_cache, p_scan_rsp->p_data, g_scan_rsp_len);
+        tuya_bluez_le_set_scan_rsp_data(p_scan_rsp->p_data, p_scan_rsp->length);
+    }
 
     return OPRT_OK;
 }
