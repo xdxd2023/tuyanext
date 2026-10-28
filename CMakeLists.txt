@@ -18,7 +18,6 @@ add_link_options("LINKER:-rpath-link,$ENV{COMMON_DIR}/lib")
 
 find_package(spdlog REQUIRED)
 find_package(lcm REQUIRED)
-find_package(OpenSSL REQUIRED)
 
 #find_package(GLib2 REQUIRED)
 
@@ -63,7 +62,6 @@ endif()
 #set(TUYAOS ${CMAKE_SOURCE_IR}/RK3326-TuyaOS)
 #set(TUYADEMO ${TUYAOS}/apps/tuyaos_demo_robot/application_components)
 
-include_directories(${OPENSSL_INCLUDE_DIR})
 include_directories(${TUYAOS}/include)
 #include_directories(${TUYADEMO}/include)
 #include_directories(${TUYADEMO}/src)
@@ -76,9 +74,6 @@ include_directories(next/src/bluez/includes)
 include_directories(next/src/bluez/includes/src/shared)
 include_directories(next/src/bluez/includes/lib)
 include_directories(next/src/Bluez_ble)
-# include_directories(apps/src/wifi/include)
-# include_directories(nl/include/libnl3)
-
 add_subdirectory(next/src/bluez/libbluetooth)
 add_subdirectory(next/src/bluez/libshared)
 # add_subdirectory(apps/src/rkcamera)
@@ -104,6 +99,7 @@ add_executable(${PROJECT_NAME}  next/src/tuyanext.cpp
                                 next/src/tuyaos.cpp
                                 next/src/tuya_utils.cpp
                                 next/src/tuya_robot.cpp
+                                next/src/tuya_advance_func.cpp
                                 next/src/tuya_sweeper.cpp
                                 next/src/tuya_dp_utils.cpp
                                 next/src/tuya_dp_function.cpp
@@ -172,12 +168,8 @@ target_link_libraries(${PROJECT_NAME} bluetooth)
 #target_link_libraries(${PROJECT_NAME} libwpa_client_64.a)
 # curl
 # target_link_libraries(${PROJECT_NAME} curl)
-# ssl
-target_link_libraries(${PROJECT_NAME} ssl)
 # rtmp
 #target_link_libraries(${PROJECT_NAME} rtmp)
-# crypto
-target_link_libraries(${PROJECT_NAME} crypto)
 # rkisp_api
 #target_link_libraries(${PROJECT_NAME} rkisp_api)
 # rockchip_mpp

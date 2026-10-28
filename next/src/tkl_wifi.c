@@ -297,12 +297,10 @@ static OPERATE_RET wifi_get_ipv4(CONST WF_IF_E wf, NW_IP_S *ip)
     char line[256], *ptr;
     char cmd[64];
     
-    // Prepare the command based on the interface
-    if (wf == WF_STATION) {
-        snprintf(cmd, sizeof(cmd), "ifconfig wlan0");
-    } else {
-        snprintf(cmd, sizeof(cmd), "ifconfig wlan0");
-    }
+    // This platform runs both station and provisioning AP on wlan0, so always
+    // query wlan0.  (The previous wlan1 branch was for a VAP_COUNT=3 design
+    // that this WS73 driver does not support.)
+    snprintf(cmd, sizeof(cmd), "ifconfig wlan0");
     
     // Execute ifconfig command
     fp = popen(cmd, "r");
@@ -310,12 +308,14 @@ static OPERATE_RET wifi_get_ipv4(CONST WF_IF_E wf, NW_IP_S *ip)
         printf("Failed to run ifconfig command\n");
         return OPRT_COM_ERROR;
     }
-#define IPADDR_PREFIX "inet addr:"
-    // Parse output to find IP address
+    // Parse output to find IP address. Support both the old net-tools format
+    // ("inet addr:1.2.3.4") and the newer one ("inet 1.2.3.4").
     while (fgets(line, sizeof(line), fp) != NULL) {
-        if ((ptr = strstr(line, IPADDR_PREFIX)) != NULL) {
-            // Skip "inet addr:" (11 characters)
-            ptr += strlen(IPADDR_PREFIX);
+        if ((ptr = strstr(line, "inet ")) != NULL) {
+            ptr += 5; // Skip "inet "
+            if (strncmp(ptr, "addr:", 5) == 0) {
+                ptr += 5; // Skip "addr:"
+            }
             // Find the end of IP address (usually space or newline)
             char *end = ptr;
             while (*end && *end != ' ' && *end != '\n') {
@@ -544,8 +544,10 @@ TUYA_WEAK_ATTRIBUTE OPERATE_RET tkl_wifi_start_ap(CONST WF_AP_CFG_IF_S *cfg)
     iret = tkl_gen_ap_start(cfg);
 #else
     char cmd[128] = {0};
-    snprintf(cmd, sizeof(cmd), "./hostap.sh %s %s",
-                cfg->ssid, cfg->passwd);
+    /* Quote ssid/password so that an empty password does not collapse and
+     * shift the channel into the wrong argument. */
+    snprintf(cmd, sizeof(cmd), "./hostap.sh \"%s\" \"%s\" %d",
+                cfg->ssid, cfg->passwd, cfg->chan);
     iret = system(cmd);
 #endif
     if(iret != 0){
@@ -558,6 +560,17 @@ TUYA_WEAK_ATTRIBUTE OPERATE_RET tkl_wifi_start_ap(CONST WF_AP_CFG_IF_S *cfg)
 
 TUYA_WEAK_ATTRIBUTE OPERATE_RET tkl_wifi_stop_ap(VOID_T)
 {
+    int iret = 0;
+
+    /* Stop the provisioning AP started by tkl_wifi_start_ap. This also
+     * restores the STA configuration so the subsequent station connect can
+     * use the wireless interface again. */
+    iret = system("./hostap.sh stop");
+    sleep(2);
+    if (iret != 0) {
+        TKL_LOGE(" WIFI stop ap failed, iret = %d\n", iret);
+        return OPRT_COM_ERROR;
+    }
 
     return OPRT_OK;
 }
