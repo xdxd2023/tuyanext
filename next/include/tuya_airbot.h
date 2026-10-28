@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tuya_robot.h"
+#include "mars_message/AirMsg.hpp"
 
 class RobotAirBot : public RobotDevice
 {
@@ -27,6 +28,7 @@ public:
     void ReportMapAll() override;
     void ReportAll() override;
 
+    void OnAirMsg(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const mars_message::AirMsg *msg);
     void OnCruiseStatus(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const tuya_message::RobotState *msg);
     bool CruiseStartMapping();
     bool CruiseGoto(const mars_message::AppSpotClean &spot);

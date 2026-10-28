@@ -521,6 +521,7 @@ void RobotAirBot::Init()
     TuyaComm::Get()->Subscribe("Mevt", &RobotAirBot::OnEvent, this);
     TuyaComm::Get()->Subscribe("Kevt", &RobotAirBot::OnEvent, this);
     TuyaComm::Get()->Subscribe("Mtest", &RobotAirBot::OnTest, this);
+    TuyaComm::Get()->Subscribe("MAirMsg", &RobotAirBot::OnAirMsg, this);
 }
 
 void RobotAirBot::OnMap(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const AppMap *msg)
@@ -612,17 +613,17 @@ void RobotAirBot::OnCruiseStatus(const lcm::ReceiveBuffer *rbuf, const std::stri
 
 void RobotAirBot::ReportStatus()
 {
-    tuya_message::Request req = {0};
-    tuya_message::RobotState state = {0};
-    LOGD(TAG, "获取设备状态");
-    if (TuyaComm::Get()->Send("ty_state", &req, &state, 1000))
-    {
-        OnCruiseStatus(nullptr, "ty_robot_state", &state);
-    }
-    else
-    {
-        LOGE(TAG, "无法获取到设备状态");
-    }
+    // tuya_message::Request req = {0};
+    // tuya_message::RobotState state = {0};
+    // LOGD(TAG, "获取设备状态");
+    // if (TuyaComm::Get()->Send("ty_state", &req, &state, 1000))
+    // {
+    //     OnCruiseStatus(nullptr, "ty_robot_state", &state);
+    // }
+    // else
+    // {
+    //     LOGE(TAG, "无法获取到设备状态");
+    // }
 }
 
 void RobotAirBot::ReportDeviceInfo()
@@ -730,4 +731,55 @@ void RobotAirBot::HandleRawDPCmd(int dpId, uint8_t *data, int len)
     }
 
     LOGD(TAG, "raw handler missing, dpId:{}", dpId);
+}
+
+void RobotAirBot::OnAirMsg(const lcm::ReceiveBuffer *rbuf, const std::string &channel, const mars_message::AirMsg *msg)
+{
+    mars_message::AirMsg lastestMsg;
+    if(!(lastestMsg == *msg))
+    {
+        nlohmann::json j = *msg;
+        LOGD(TAG, "AirMsg: {}",  j.dump(2));
+        lastestMsg = *msg;
+    }
+    else
+    {
+        return;
+    }
+    if(msg->batQua != -1)
+    {
+        AirBotReportValueState(45, msg->batQua);
+    }
+    if(msg->airLevel != -1)
+    {
+        AirBotReportValueState(2, msg->airLevel);
+    }
+    if(msg->CH2O != -1)
+    {
+        AirBotReportValueState(27, msg->CH2O);
+    }
+    if(msg->fanLevel != -1)
+    {
+        AirBotReportValueState(54, msg->fanLevel);
+    }
+    if(msg->humidity != 0)
+    {
+        AirBotReportValueState(13, msg->humidity);
+    }
+    if(msg->pm10 != 0)
+    {
+        AirBotReportValueState(30, msg->pm10);
+    }
+    if(msg->pm25 != 0)
+    {
+        AirBotReportValueState(2, msg->pm25);
+    }
+    if(msg->temperature != 0)
+    {
+        AirBotReportValueState(12, msg->temperature);
+    }
+    if(msg->workState != 0)
+    {
+        AirBotReportEnumState(3, msg->workState);
+    }
 }
